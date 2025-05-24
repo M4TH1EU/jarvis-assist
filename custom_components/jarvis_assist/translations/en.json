@@ -1,0 +1,32 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "url": "URL of the llama.cpp server"
+        }
+      }
+    },
+    "error": {
+      "unknown": "An unknown error occurred",
+      "cannot_connect": "Unable to connect to the server"
+    },
+    "abort": {
+      "already_configured": "This server is already configured"
+    },
+    "options": {
+      "step": {
+        "init": {
+          "data": {
+            "prompt": "System prompt",
+            "llm_hass_api": "Allow Home Assistant API access",
+            "max_history": "Maximum conversation history length"
+          },
+          "data_description": {
+            "prompt": "Optional system prompt shown to the LLM at the beginning of each conversation"
+          }
+        }
+      }
+    }
+  }
+}
