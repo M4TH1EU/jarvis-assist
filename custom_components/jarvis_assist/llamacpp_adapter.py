@@ -104,9 +104,11 @@ class Tool:
 
 # The client that makes API calls
 class LlamaCppClient:
-    def __init__(self, hass: HomeAssistant, base_url: str = "http://localhost:8080"):
+    def __init__(self, hass: HomeAssistant, base_url: str = "http://localhost:8080",
+                 blacklist_tools: Optional[list[str]] = None):
         self.base_url = base_url.rstrip("/")
         self._client = get_async_client(hass)
+        self.blacklist_tools = blacklist_tools or []
 
     async def chat(
             self,
@@ -136,7 +138,7 @@ class LlamaCppClient:
                 payload["messages"][id_of_last_msg_from_user]["content"] += " /no_think"
 
         if tools:
-            payload["tools"] = [tool.to_dict() for tool in tools]
+            payload["tools"] = [tool.to_dict() for tool in tools if tool.function.name not in self.blacklist_tools]
 
         try:
             if not stream:

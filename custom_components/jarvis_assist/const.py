@@ -13,3 +13,20 @@ DEFAULT_MAX_HISTORY = 20
 
 CONF_DISABLE_REASONING = "disable_reasoning"
 DISABLE_REASONING = False
+
+CONF_BLACKLIST_TOOLS = "blacklist_tools"
+EXISTING_TOOLS = [
+    'HassTurnOn',
+    'HassTurnOff',
+    'HassCancelAllTimers',
+    'HassMediaUnpause',
+    'HassMediaPause',
+    'HassMediaNext',
+    'HassMediaPrevious',
+    'HassSetVolume',
+    'HassMediaSearchAndPlay',
+    'HassListAddItem',
+    'HassListCompleteItem',
+    'todo_get_items',
+    'GetLiveContext'
+]

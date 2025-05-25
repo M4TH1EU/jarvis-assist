@@ -11,12 +11,13 @@ from homeassistant.config_entries import ConfigFlow, ConfigEntry, OptionsFlow
 from homeassistant.const import CONF_URL, CONF_LLM_HASS_API
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import llm
+from homeassistant.helpers.llm import AssistAPI
 from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType, SelectOptionDict, \
     TemplateSelector, SelectSelector, SelectSelectorConfig, NumberSelector, NumberSelectorConfig, NumberSelectorMode
 
 from . import LlamaCppClient, JarvisAssistAPI
 from .const import DOMAIN, DEFAULT_TIMEOUT, CONF_PROMPT, CONF_MAX_HISTORY, DEFAULT_MAX_HISTORY, JARVIS_LLM_API, \
-    DISABLE_REASONING, CONF_DISABLE_REASONING
+    DISABLE_REASONING, CONF_DISABLE_REASONING, EXISTING_TOOLS, CONF_BLACKLIST_TOOLS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,31 +39,6 @@ class JarvisAssistConfigFlow(ConfigFlow, domain=DOMAIN):
         """Initialize config flow."""
         self.url: str | None = None
         self.client: LlamaCppClient | None = None
-
-    #
-    # async def async_step_user(self, user_input: dict[str, Any] | None = None):
-    #     """Handle the initial step."""
-    #     if user_input is not None:
-    #         server_url = user_input["server-url"]
-    #         if not server_url.startswith("http://") and not server_url.startswith("https://"):
-    #             return self.async_show_form(
-    #                 step_id="user",
-    #                 data_schema=DATA_SCHEMA,
-    #                 errors={"base": "invalid_url"},
-    #             )
-    #
-    #         await self.async_set_unique_id(server_url)
-    #         self._abort_if_unique_id_configured()
-    #
-    #         return self.async_create_entry(
-    #             title="Jarvis Assist",
-    #             data={},
-    #         )
-    #
-    #     return self.async_show_form(
-    #         step_id="user",
-    #         data_schema=DATA_SCHEMA,
-    #     )
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         """Handle the initial step."""
@@ -104,7 +80,7 @@ class JarvisAssistOptionsFlow(OptionsFlow):
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialize options flow."""
-        self.url: str = config_entry.data[CONF_URL]
+        self.url: str = config_entry.data.get(CONF_URL, "")
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
         """Manage the options."""
@@ -120,13 +96,21 @@ def jarvis_assist_config_option_schema(
         hass: HomeAssistant, options: Mapping[str, Any]
 ) -> dict:
     """Ollama options schema."""
-    hass_apis: list[SelectOptionDict] = [
-        SelectOptionDict(
+    hass_apis: list[SelectOptionDict] = []
+    tools: list[SelectOptionDict] = []
+
+    api: AssistAPI
+    for api in llm.async_get_apis(hass):
+        hass_apis.append(SelectOptionDict(
             label=api.name,
             value=api.id,
-        )
-        for api in llm.async_get_apis(hass)
-    ]
+        ))
+
+        for tool in EXISTING_TOOLS:
+            tools.append(SelectOptionDict(
+                label=tool,
+                value=tool,
+            ))
 
     return {
         vol.Optional(
@@ -157,4 +141,10 @@ def jarvis_assist_config_option_schema(
                 "suggested_value": options.get(DISABLE_REASONING, False)
             },
         ): bool,
+        vol.Optional(
+            CONF_BLACKLIST_TOOLS,
+            description={
+                "suggested_value": options.get(CONF_BLACKLIST_TOOLS, [])
+            },
+        ): SelectSelector(SelectSelectorConfig(options=tools, multiple=True)),
     }

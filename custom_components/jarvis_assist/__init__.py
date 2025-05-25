@@ -12,7 +12,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import llm
 from homeassistant.helpers.llm import API, LLMContext, APIInstance
 
-from .const import DOMAIN, DEFAULT_TIMEOUT, JARVIS_LLM_API
+from .const import DOMAIN, DEFAULT_TIMEOUT, JARVIS_LLM_API, CONF_BLACKLIST_TOOLS
 from .llamacpp_adapter import LlamaCppClient
 
 LOGGER = logging.getLogger(__name__)
@@ -26,7 +26,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not any([x.id == JARVIS_LLM_API for x in llm.async_get_apis(hass)]):
         llm.async_register_api(hass, JarvisAssistAPI(hass))
 
-    client = LlamaCppClient(base_url=settings[CONF_URL], hass=hass)
+    client = LlamaCppClient(base_url=settings.get(CONF_URL), hass=hass,
+                            blacklist_tools=settings.get(CONF_BLACKLIST_TOOLS, []))
     try:
         async with asyncio.timeout(DEFAULT_TIMEOUT):
             await client.health()
@@ -67,14 +68,3 @@ class JarvisAssistAPI(API):
             llm_context=llm_context,
             tools=[],
         )
-
-#
-# async def async_setup_api(hass: HomeAssistant, entry: ConfigEntry) -> None:
-#     """Register the API with Home Assistant."""
-#     # If the API is associated with a Config Entry, the LLM API must be
-#     # unregistered when the config entry is unloaded.
-#     unreg = llm.async_register_api(
-#         hass,
-#         JarvisAssistAPI(hass)
-#     )
-#     entry.async_on_unload(unreg)
