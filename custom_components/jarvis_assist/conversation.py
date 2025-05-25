@@ -15,7 +15,7 @@ from homeassistant.helpers.intent import IntentResponse
 from voluptuous_openapi import convert
 
 from . import LOGGER, DOMAIN
-from .const import CONF_PROMPT, CONF_MAX_HISTORY, DEFAULT_MAX_HISTORY
+from .const import CONF_PROMPT, CONF_MAX_HISTORY, DEFAULT_MAX_HISTORY, CONF_DISABLE_REASONING
 from .llamacpp_adapter import Message, MessageHistory, MessageRole, Tool, ToolCall
 
 # Max number of back and forth with the LLM to generate a response
@@ -186,7 +186,7 @@ class JarvisConversationEntity(ConversationEntity, AbstractConversationAgent):
         except conversation.ConverseError as err:
             return err.as_conversation_result()
 
-        tools: list[Tool] | None = None
+        tools: list[Tool] = []
         if chat_log.llm_api:
             tools = [
                 _format_tool(tool, chat_log.llm_api.custom_serializer)
@@ -207,7 +207,8 @@ class JarvisConversationEntity(ConversationEntity, AbstractConversationAgent):
                     # Make a copy of the messages because we mutate the list later
                     messages=list(message_history.messages),
                     tools=tools,
-                    stream=use_stream
+                    stream=use_stream,
+                    disable_reasoning=settings.get(CONF_DISABLE_REASONING, False),
                 )
             except Exception as err:
                 LOGGER.error("Unexpected error talking to llama.cpp server: %s", err)

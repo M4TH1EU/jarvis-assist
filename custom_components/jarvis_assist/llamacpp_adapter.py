@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Optional, AsyncGenerator, Union
@@ -8,6 +9,8 @@ from typing import Any, Optional, AsyncGenerator, Union
 import httpx
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.httpx_client import get_async_client
+
+LOGGER = logging.getLogger(__name__)
 
 
 # Exceptions
@@ -111,6 +114,7 @@ class LlamaCppClient:
             *,
             tools: Optional[list[Tool]] = None,
             stream: bool = False,
+            disable_reasoning: bool = False
     ) -> AsyncGenerator[Message, None]:
         """
         Call the /v1/chat/completions endpoint on the Llama.cpp OpenAI-compatible server.
@@ -122,32 +126,56 @@ class LlamaCppClient:
             "stream": stream,
         }
 
+        # If reasoning is disabled, append /no_think to the first user message content
+        if disable_reasoning:
+            id_of_last_msg_from_user = next(
+                (i for i, msg in enumerate(payload["messages"]) if msg["role"] == MessageRole.USER),
+                None
+            )
+            if id_of_last_msg_from_user is not None:
+                payload["messages"][id_of_last_msg_from_user]["content"] += " /no_think"
+
         if tools:
             payload["tools"] = [tool.to_dict() for tool in tools]
 
         try:
             if not stream:
-                resp = await self._client.post(url, json=payload)
+                resp = await self._client.post(url, json=payload, timeout=30)
                 resp.raise_for_status()
                 data = resp.json()
                 choice = data["choices"][0]["message"]
 
+                content = choice.get("content").replace("\n\n", "", 1)
+                reasoning_content = choice.get("reasoning_content", "")
+
+                tool_calls = [
+                    ToolCall(
+                        name=call["function"]["name"],
+                        arguments=json.loads(call["function"]["arguments"])
+                        # TODO: make sure JSON is valid and fix common issues with LLMs
+
+                    )
+                    for call in choice.get("tool_calls", [])
+                ]
+
+                LOGGER.debug("Reasoning : " + reasoning_content)
+                LOGGER.debug("Content: " + content)
+
+                # Try to parse service call from content if the model didn't return a tool call
+                if not tool_calls:
+                    parsed_tools = parse_service_str(content, tools)
+                    if parsed_tools:
+                        tool_calls.extend(parsed_tools)
+                        content = ""
+
                 # build a one‐shot async generator
                 async def fake_stream() -> AsyncGenerator[Message, None]:
-                    tool_calls = [
-                        ToolCall(
-                            name=call["function"]["name"],
-                            arguments=json.loads(call["function"]["arguments"])
-                            # TODO: make sure JSON is valid and fix common issues with LLMs
 
-                        )
-                        for call in choice.get("tool_calls", [])
-                    ]
                     # yield one message with both content and tool_calls, marked done
                     yield Message(
                         role=choice["role"],
-                        content=choice.get("content").replace("\n\n", "", 1),  # remove the first \n\n
-                        reasoning_content=choice.get("reasoning_content"),
+                        content=content,  # remove the first \n\n
+                        reasoning_content=reasoning_content,
                         tool_calls=tool_calls,
                         done=True,
                         done_reason="stop",
@@ -174,3 +202,77 @@ class LlamaCppClient:
             raise ResponseError(e.response.text, e.response.status_code)
         except httpx.RequestError as e:
             raise RequestError(str(e))
+
+
+def parse_service_str(content: str, existing_tools: list[Tool]) -> Optional[list[ToolCall]]:
+    """Try to parse the service call from the content."""
+
+    lines = content.splitlines()
+    first_line = lines[0] if lines else ""
+    rest_of_lines = "\n".join(lines[1:]) if len(lines) > 1 else ""
+
+    service_name = ""
+    arguments = {}
+
+    def _does_service_exist(service_name: str) -> bool:
+        """Check if the service exists in the existing tools."""
+        for tool in existing_tools:
+            if tool.function.name == service_name:
+                return True
+        return False
+
+    # Example Case 1:
+    # HassListAddItem
+    # item: cucumbers
+    # name: Shopping List
+
+    # Example Case 2:
+    # HassListAddItem
+    # { item: cucumbers, name: Shopping List }
+
+    # Example Case 3:
+    # HassListAddItem: { item: cucumbers, name: Shopping List }
+    # TODO: implement
+
+    # Example Case 4:
+    # HassListAddItem: item: cucumbers, name: Shopping List
+    # TODO: implement
+
+    # Example Case 5:
+    # HassListAddItem(item="cucumbers", name="Shopping List").
+    # TODO: implement
+
+    # Example Case 6:
+    # HassListAddItem: item=cucumbers, name=Shopping List
+    # TODO: implement
+
+    try:
+        if _does_service_exist(first_line):
+            # The first line is the service name
+            service_name = first_line
+
+            # Case 2
+            if "{" in rest_of_lines and "}" in rest_of_lines:
+                # The rest of the lines are the arguments
+                arguments = json.loads(rest_of_lines)
+
+            # Case 1
+            elif ":" in rest_of_lines:
+                # The rest of the lines are key-value pairs
+                arguments = {}
+                for line in rest_of_lines.splitlines():
+                    if ":" in line:
+                        key, value = line.split(":", 1)
+                        arguments[key.strip()] = value.strip()
+
+        if service_name and arguments:
+            return [
+                ToolCall(
+                    name=service_name,
+                    arguments=arguments
+                )
+            ]
+    except Exception:
+        return None
+
+    return None

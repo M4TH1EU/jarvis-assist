@@ -15,7 +15,8 @@ from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, Tex
     TemplateSelector, SelectSelector, SelectSelectorConfig, NumberSelector, NumberSelectorConfig, NumberSelectorMode
 
 from . import LlamaCppClient, JarvisAssistAPI
-from .const import DOMAIN, DEFAULT_TIMEOUT, CONF_PROMPT, CONF_MAX_HISTORY, DEFAULT_MAX_HISTORY, JARVIS_LLM_API
+from .const import DOMAIN, DEFAULT_TIMEOUT, CONF_PROMPT, CONF_MAX_HISTORY, DEFAULT_MAX_HISTORY, JARVIS_LLM_API, \
+    DISABLE_REASONING, CONF_DISABLE_REASONING
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -149,5 +150,11 @@ def jarvis_assist_config_option_schema(
             NumberSelectorConfig(
                 min=0, max=sys.maxsize, step=1, mode=NumberSelectorMode.BOX
             )
-        )
+        ),
+        vol.Optional(
+            CONF_DISABLE_REASONING,
+            description={
+                "suggested_value": options.get(DISABLE_REASONING, False)
+            },
+        ): bool,
     }
