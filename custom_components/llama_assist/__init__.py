@@ -1,4 +1,4 @@
-"""The Jarvis Assist integration."""
+"""The Llama Assist integration."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import llm
 from homeassistant.helpers.llm import API, LLMContext, APIInstance
 
-from .const import DOMAIN, DEFAULT_TIMEOUT, JARVIS_LLM_API, CONF_BLACKLIST_TOOLS
+from .const import DOMAIN, DEFAULT_TIMEOUT, LLAMA_LLM_API, CONF_BLACKLIST_TOOLS
 from .llamacpp_adapter import LlamaCppClient
 
 LOGGER = logging.getLogger(__name__)
@@ -20,11 +20,11 @@ PLATFORMS = (Platform.CONVERSATION,)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up the Jarvis Assist integration."""
+    """Set up the Llama Assist integration."""
     settings = {**entry.data, **entry.options}
 
-    if not any([x.id == JARVIS_LLM_API for x in llm.async_get_apis(hass)]):
-        llm.async_register_api(hass, JarvisAssistAPI(hass))
+    if not any([x.id == LLAMA_LLM_API for x in llm.async_get_apis(hass)]):
+        llm.async_register_api(hass, LlamaAssistAPI(hass))
 
     client = LlamaCppClient(base_url=settings.get(CONF_URL), hass=hass,
                             blacklist_tools=settings.get(CONF_BLACKLIST_TOOLS, []))
@@ -49,15 +49,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-class JarvisAssistAPI(API):
+class LlamaAssistAPI(API):
     """My own API for LLMs."""
 
     def __init__(self, hass: HomeAssistant) -> None:
         """Initialize the API."""
         super().__init__(
             hass=hass,
-            id=JARVIS_LLM_API,
-            name="Jarvis Assist API",
+            id=LLAMA_LLM_API,
+            name="Llama Assist",
         )
 
     async def async_get_api_instance(self, llm_context: LLMContext) -> APIInstance:

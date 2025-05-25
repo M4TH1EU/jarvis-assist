@@ -1,0 +1,15 @@
+{
+  "domain": "llamacpp_assist",
+  "name": "Llama Assist",
+  "codeowners": [
+    "@M4TH1EU"
+  ],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/M4TH1EU/llama-assist/README.md",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/M4TH1EU/llama-assist/issues",
+  "requirements": [
+  ],
+  "version": "0.0.1"
+}

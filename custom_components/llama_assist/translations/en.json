@@ -15,13 +15,15 @@
       "already_configured": "This server is already configured"
     },
     "options": {
-      "flow_title": "Jarvis Assist Options",
+      "flow_title": "Llama Assist Options",
       "step": {
         "init": {
           "data": {
             "prompt": "System prompt",
             "llm_hass_api": "Which LLM APIs to use (provides the tools to interact with Home Assistant)",
-            "max_history": "Maximum conversation history length"
+            "max_history": "Maximum conversation history length",
+            "disable_reasoning": "Disable model reasoning (will impact quality in favor of speed)",
+            "blacklist_tools": "Tools to disable (improves speed)"
           }
         }
       }

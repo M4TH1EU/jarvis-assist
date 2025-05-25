@@ -1,4 +1,4 @@
-"""Config flow for Jarvis Assist integration."""
+"""Config flow for Llama Assist integration."""
 from __future__ import annotations
 
 import asyncio
@@ -15,8 +15,8 @@ from homeassistant.helpers.llm import AssistAPI
 from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType, SelectOptionDict, \
     TemplateSelector, SelectSelector, SelectSelectorConfig, NumberSelector, NumberSelectorConfig, NumberSelectorMode
 
-from . import LlamaCppClient, JarvisAssistAPI
-from .const import DOMAIN, DEFAULT_TIMEOUT, CONF_PROMPT, CONF_MAX_HISTORY, DEFAULT_MAX_HISTORY, JARVIS_LLM_API, \
+from . import LlamaCppClient, LlamaAssistAPI
+from .const import DOMAIN, DEFAULT_TIMEOUT, CONF_PROMPT, CONF_MAX_HISTORY, DEFAULT_MAX_HISTORY, LLAMA_LLM_API, \
     DISABLE_REASONING, CONF_DISABLE_REASONING, EXISTING_TOOLS, CONF_BLACKLIST_TOOLS
 
 _LOGGER = logging.getLogger(__name__)
@@ -30,8 +30,8 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 )
 
 
-class JarvisAssistConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Jarvis Assist."""
+class LlamaAssistConfigFlow(ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for Llama Assist."""
 
     VERSION = 1
 
@@ -45,8 +45,8 @@ class JarvisAssistConfigFlow(ConfigFlow, domain=DOMAIN):
         user_input = user_input or {}
         self.url = user_input.get(CONF_URL, self.url)
 
-        if not any([x.id == JARVIS_LLM_API for x in llm.async_get_apis(self.hass)]):
-            llm.async_register_api(self.hass, JarvisAssistAPI(self.hass))
+        if not any([x.id == LLAMA_LLM_API for x in llm.async_get_apis(self.hass)]):
+            llm.async_register_api(self.hass, LlamaAssistAPI(self.hass))
 
         if self.url is None:
             return self.async_show_form(step_id="user", data_schema=STEP_USER_DATA_SCHEMA, last_step=False)
@@ -67,15 +67,15 @@ class JarvisAssistConfigFlow(ConfigFlow, domain=DOMAIN):
         if errors:
             return self.async_show_form(step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors)
 
-        return self.async_create_entry(title=f"Jarvis Assist ({self.url})", data={CONF_URL: self.url})
+        return self.async_create_entry(title=f"Llama Assist ({self.url})", data={CONF_URL: self.url})
 
     @staticmethod
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
         """Create the options flow."""
-        return JarvisAssistOptionsFlow(config_entry)
+        return LlamaAssistOptionsFlow(config_entry)
 
 
-class JarvisAssistOptionsFlow(OptionsFlow):
+class LlamaAssistOptionsFlow(OptionsFlow):
     """Ollama options flow."""
 
     def __init__(self, config_entry: ConfigEntry) -> None:
@@ -85,14 +85,14 @@ class JarvisAssistOptionsFlow(OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
         """Manage the options."""
         if user_input is not None:
-            return self.async_create_entry(title=f"Jarvis Assist ({self.url})", data=user_input)
+            return self.async_create_entry(title=f"Llama Assist ({self.url})", data=user_input)
 
         options: Mapping[str, Any] = self.config_entry.options or {}
-        schema = jarvis_assist_config_option_schema(self.hass, options)
+        schema = llama_assist_config_option_schema(self.hass, options)
         return self.async_show_form(step_id="init", data_schema=vol.Schema(schema))
 
 
-def jarvis_assist_config_option_schema(
+def llama_assist_config_option_schema(
         hass: HomeAssistant, options: Mapping[str, Any]
 ) -> dict:
     """Ollama options schema."""

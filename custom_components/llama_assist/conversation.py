@@ -25,7 +25,7 @@ MAX_TOOL_ITERATIONS = 10
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry,
                             async_add_entities: AddConfigEntryEntitiesCallback) -> None:
     """Set up conversation entities."""
-    agent = JarvisConversationEntity(config_entry)
+    agent = LlamaConversationEntity(config_entry)
     async_add_entities([agent])
 
 
@@ -116,8 +116,8 @@ async def _transform_stream(
         yield chunk
 
 
-class JarvisConversationEntity(ConversationEntity, AbstractConversationAgent):
-    """Jarvis Assist conversation agent."""
+class LlamaConversationEntity(ConversationEntity, AbstractConversationAgent):
+    """Llama Assist conversation agent."""
 
     _attr_has_entity_name = True
     _attr_supports_streaming = True
