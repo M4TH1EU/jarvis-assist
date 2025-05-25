@@ -1,6 +1,7 @@
 """Constants for the Jarvis Assist integration."""
 
 DOMAIN = "jarvis_assist"
+JARVIS_LLM_API = DOMAIN + "_api"
 
 CONF_SERVER_URL = "server-url"
 CONF_PROMPT = "prompt"

@@ -15,15 +15,13 @@
       "already_configured": "This server is already configured"
     },
     "options": {
+      "flow_title": "Jarvis Assist Options",
       "step": {
         "init": {
           "data": {
             "prompt": "System prompt",
-            "llm_hass_api": "Allow Home Assistant API access",
+            "llm_hass_api": "Which LLM APIs to use (provides the tools to interact with Home Assistant)",
             "max_history": "Maximum conversation history length"
-          },
-          "data_description": {
-            "prompt": "Optional system prompt shown to the LLM at the beginning of each conversation"
           }
         }
       }

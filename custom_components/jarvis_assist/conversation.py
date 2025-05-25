@@ -3,9 +3,8 @@ from typing import Literal, Callable, Any, AsyncGenerator
 
 from homeassistant.components import assist_pipeline, conversation
 from homeassistant.components.conversation import AbstractConversationAgent, ConversationEntityFeature, \
-    ConversationInput, ConversationResult, AssistantContent
+    ConversationInput, ConversationResult
 from homeassistant.components.conversation import ConversationEntity
-from homeassistant.components.ollama.models import MessageRole
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import MATCH_ALL, CONF_LLM_HASS_API
 from homeassistant.core import HomeAssistant
@@ -17,7 +16,7 @@ from voluptuous_openapi import convert
 
 from . import LOGGER, DOMAIN
 from .const import CONF_PROMPT, CONF_MAX_HISTORY, DEFAULT_MAX_HISTORY
-from .llamacpp_adapter import Message, MessageHistory
+from .llamacpp_adapter import Message, MessageHistory, MessageRole, Tool, ToolCall
 
 # Max number of back and forth with the LLM to generate a response
 MAX_TOOL_ITERATIONS = 10
@@ -32,43 +31,12 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry,
 
 def _format_tool(
         tool: llm.Tool, custom_serializer: Callable[[Any], Any] | None
-) -> dict[str, Any]:
-    """Format tool specification."""
-    tool_spec = {
-        "name": tool.name,
-        "parameters": convert(tool.parameters, custom_serializer=custom_serializer),
-    }
-    if tool.description:
-        tool_spec["description"] = tool.description
-    return {"type": "function", "function": tool_spec}
-
-
-def _fix_invalid_arguments(value: Any) -> Any:
-    """Attempt to repair incorrectly formatted json function arguments.
-
-    Small models (for example llama3.1 8B) may produce invalid argument values
-    which we attempt to repair here.
-    """
-    if not isinstance(value, str):
-        return value
-    if (value.startswith("[") and value.endswith("]")) or (
-            value.startswith("{") and value.endswith("}")
-    ):
-        try:
-            return json.loads(value)
-        except json.decoder.JSONDecodeError:
-            pass
-    return value
-
-
-def _parse_tool_args(arguments: dict[str, Any]) -> dict[str, Any]:
-    """Rewrite ollama tool arguments.
-
-    This function improves tool use quality by fixing common mistakes made by
-    small local tool use models. This will repair invalid json arguments and
-    omit unnecessary arguments with empty values that will fail intent parsing.
-    """
-    return {k: _fix_invalid_arguments(v) for k, v in arguments.items() if v}
+) -> Tool:
+    return Tool(Tool.Function(
+        name=tool.name,
+        description=tool.description,
+        parameters=convert(tool.parameters, custom_serializer=custom_serializer),
+    ))
 
 
 def _convert_content(
@@ -89,11 +57,9 @@ def _convert_content(
             role=MessageRole.ASSISTANT,
             content=chat_content.content,
             tool_calls=[
-                Message.ToolCall(
-                    function=Message.ToolCall.Function(
-                        name=tool_call.tool_name,
-                        arguments=tool_call.tool_args,
-                    )
+                ToolCall(
+                    name=tool_call.tool_name,
+                    arguments=tool_call.tool_args,
                 )
                 for tool_call in chat_content.tool_calls or ()
             ],
@@ -129,24 +95,23 @@ async def _transform_stream(
     """
 
     new_msg = True
-    async for response in result:
-        LOGGER.debug("Received response: %s", response)
-        response_message = response["message"]
+    async for message in result:
+        LOGGER.debug("Received response: %s", message)
         chunk: conversation.AssistantContentDeltaDict = {}
         if new_msg:
             new_msg = False
-            chunk["role"] = "assistant"
-        if (tool_calls := response_message.get("tool_calls")) is not None:
+            chunk["role"] = MessageRole.ASSISTANT
+        if (tool_calls := message.tool_calls) is not None:
             chunk["tool_calls"] = [
                 llm.ToolInput(
-                    tool_name=tool_call["function"]["name"],
-                    tool_args=_parse_tool_args(tool_call["function"]["arguments"]),
+                    tool_name=tool_call.name,
+                    tool_args=tool_call.arguments,
                 )
                 for tool_call in tool_calls
             ]
-        if (content := response_message.get("content")) is not None:
+        if (content := message.content) is not None:
             chunk["content"] = content
-        if response_message.get("done"):
+        if message.done:
             new_msg = True
         yield chunk
 
@@ -213,15 +178,15 @@ class JarvisConversationEntity(ConversationEntity, AbstractConversationAgent):
 
         try:
             await chat_log.async_update_llm_data(
-                DOMAIN,
-                user_input,
-                settings.get(CONF_LLM_HASS_API),
-                settings.get(CONF_PROMPT),
+                conversing_domain=DOMAIN,
+                user_input=user_input,
+                user_llm_hass_api=settings.get(CONF_LLM_HASS_API),
+                user_llm_prompt=settings.get(CONF_PROMPT),
             )
         except conversation.ConverseError as err:
             return err.as_conversation_result()
 
-        tools: list[dict[str, Any]] | None = None
+        tools: list[Tool] | None = None
         if chat_log.llm_api:
             tools = [
                 _format_tool(tool, chat_log.llm_api.custom_serializer)
@@ -244,47 +209,15 @@ class JarvisConversationEntity(ConversationEntity, AbstractConversationAgent):
                     tools=tools,
                     stream=use_stream
                 )
-            # except (ollama.RequestError, ollama.ResponseError) as err:
-            #     _LOGGER.error("Unexpected error talking to Ollama server: %s", err)
-            #     raise HomeAssistantError(
-            #         f"Sorry, I had a problem talking to the Ollama server: {err}"
-            #     ) from err
             except Exception as err:
                 LOGGER.error("Unexpected error talking to llama.cpp server: %s", err)
                 raise HomeAssistantError(f"Sorry, I had a problem talking to the llama.cpp server: {err}") from err
 
-            if use_stream:
-                message_history.messages.extend(
-                    _convert_content(content)
-                    async for content in chat_log.async_add_delta_content_stream(
-                        user_input.agent_id,
-                        _transform_stream(response_generator),
-                    )
-                )
-            else:
-                chat_log.content.append(
-                    AssistantContent(
-                        content=_parse_reasoning_message(response_generator.message.content or ""),
-                        agent_id=user_input.agent_id,
-                        tool_calls=[
-                            llm.ToolInput(
-                                tool_name=tc.function.name,
-                                tool_args=tc.function.arguments,
-                            )
-                            for tc in response_generator.message.tool_calls
-                        ],
-                    )
-                )
-
-                message_history.messages.append(
-                    Message(
-                        role=response_generator.message.role,
-                        content=response_generator.message.content,
-                        tool_calls=response_generator.message.tool_calls,
-                        done=response_generator.message.done,
-                        done_reason=response_generator.message.done_reason,
-                    )
-                )
+            message_history.messages.extend([
+                _convert_content(content)
+                async for content in
+                chat_log.async_add_delta_content_stream(user_input.agent_id, _transform_stream(response_generator))
+            ])
 
             if not chat_log.unresponded_tool_results:
                 break
@@ -295,7 +228,11 @@ class JarvisConversationEntity(ConversationEntity, AbstractConversationAgent):
             raise TypeError(
                 f"Unexpected last message type: {type(chat_log.content[-1])}"
             )
-        intent_response.async_set_speech(chat_log.content[-1].content or "")
+
+        content = _parse_reasoning_message(chat_log.content[-1].content)
+        if content:
+            intent_response.async_set_speech(content)
+
         return conversation.ConversationResult(
             response=intent_response,
             conversation_id=chat_log.conversation_id,
@@ -333,6 +270,8 @@ class JarvisConversationEntity(ConversationEntity, AbstractConversationAgent):
 
 
 def _parse_reasoning_message(msg: str) -> str:
+    msg = msg.replace("\n\n", "")
+
     if "<think>" in msg and "</think>" in msg:
         # Extract the thought content
         return msg.split("</think>")[1].strip()

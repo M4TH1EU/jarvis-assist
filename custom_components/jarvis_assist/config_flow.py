@@ -14,8 +14,8 @@ from homeassistant.helpers import llm
 from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType, SelectOptionDict, \
     TemplateSelector, SelectSelector, SelectSelectorConfig, NumberSelector, NumberSelectorConfig, NumberSelectorMode
 
-from . import LlamaCppClient
-from .const import DOMAIN, DEFAULT_TIMEOUT, CONF_PROMPT, CONF_MAX_HISTORY, DEFAULT_MAX_HISTORY
+from . import LlamaCppClient, JarvisAssistAPI
+from .const import DOMAIN, DEFAULT_TIMEOUT, CONF_PROMPT, CONF_MAX_HISTORY, DEFAULT_MAX_HISTORY, JARVIS_LLM_API
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,13 +68,16 @@ class JarvisAssistConfigFlow(ConfigFlow, domain=DOMAIN):
         user_input = user_input or {}
         self.url = user_input.get(CONF_URL, self.url)
 
+        if not any([x.id == JARVIS_LLM_API for x in llm.async_get_apis(self.hass)]):
+            llm.async_register_api(self.hass, JarvisAssistAPI(self.hass))
+
         if self.url is None:
             return self.async_show_form(step_id="user", data_schema=STEP_USER_DATA_SCHEMA, last_step=False)
 
         errors = {}
 
         try:
-            self.client = LlamaCppClient(base_url=self.url)
+            self.client = LlamaCppClient(base_url=self.url, hass=self.hass)
 
             async with asyncio.timeout(DEFAULT_TIMEOUT):
                 await self.client.health()
@@ -90,7 +93,7 @@ class JarvisAssistConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_create_entry(title=f"Jarvis Assist ({self.url})", data={CONF_URL: self.url})
 
     @staticmethod
-    async def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
         """Create the options flow."""
         return JarvisAssistOptionsFlow(config_entry)
 
@@ -108,11 +111,11 @@ class JarvisAssistOptionsFlow(OptionsFlow):
             return self.async_create_entry(title=f"Jarvis Assist ({self.url})", data=user_input)
 
         options: Mapping[str, Any] = self.config_entry.options or {}
-        schema = ollama_config_option_schema(self.hass, options)
-        return self.async_show_form(step_id="init", data_schema=vol.Schema(schema), )
+        schema = jarvis_assist_config_option_schema(self.hass, options)
+        return self.async_show_form(step_id="init", data_schema=vol.Schema(schema))
 
 
-def ollama_config_option_schema(
+def jarvis_assist_config_option_schema(
         hass: HomeAssistant, options: Mapping[str, Any]
 ) -> dict:
     """Ollama options schema."""

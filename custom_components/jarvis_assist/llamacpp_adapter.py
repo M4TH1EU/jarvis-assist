@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncGenerator as _AsyncGen
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Callable, Literal, Mapping, Optional, Sequence, Union
+from typing import Any, Optional, AsyncGenerator, Union
 
 import httpx
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.httpx_client import get_async_client
 
 
 # Exceptions
@@ -34,152 +35,95 @@ class MessageRole(StrEnum):
 
 @dataclass
 class MessageHistory:
-    """Chat message history."""
-
     messages: list[Message]
-    """List of message history, including system prompt and assistant responses."""
 
     @property
     def num_user_messages(self) -> int:
         """Return a count of user messages."""
-        return sum(m["role"] == MessageRole.USER.value for m in self.messages)
+        return sum(m.role == MessageRole.USER for m in self.messages)
 
 
-# Base model to allow dict-like access
-class SubscriptableBaseModel:
-    def __getitem__(self, key: str) -> Any:
-        if hasattr(self, key):
-            return getattr(self, key)
-        raise KeyError(key)
+@dataclass
+class Message:
+    role: Union[MessageRole, str]
+    content: Optional[str] = None
+    reasoning_content: Optional[str] = None
+    tool_calls: Optional[list[ToolCall]] = None
+    done: Optional[bool] = None
+    done_reason: Optional[str] = None
 
-    def __setitem__(self, key: str, value: Any) -> None:
-        setattr(self, key, value)
-
-    def __contains__(self, key: str) -> bool:
-        return hasattr(self, key)
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return getattr(self, key) if hasattr(self, key) else default
-
-
-# Structures returned by the API
-class BaseGenerateResponse(SubscriptableBaseModel):
-    def __init__(
-            self,
-            model: Optional[str] = None,
-            created_at: Optional[str] = None,
-            done: Optional[bool] = None,
-            done_reason: Optional[str] = None,
-            total_duration: Optional[int] = None,
-            load_duration: Optional[int] = None,
-            prompt_eval_count: Optional[int] = None,
-            prompt_eval_duration: Optional[int] = None,
-            eval_count: Optional[int] = None,
-            eval_duration: Optional[int] = None,
-    ):
-        self.model = model
-        self.created_at = created_at
-        self.done = done
-        self.done_reason = done_reason
-        self.total_duration = total_duration
-        self.load_duration = load_duration
-        self.prompt_eval_count = prompt_eval_count
-        self.prompt_eval_duration = prompt_eval_duration
-        self.eval_count = eval_count
-        self.eval_duration = eval_duration
+    def to_dict(self):
+        """Convert the message to a dictionary for API requests."""
+        data = {
+            "role": self.role,
+            "content": self.content,
+            "done": self.done,
+            "done_reason": self.done_reason,
+        }
+        if self.tool_calls:
+            data["tool_calls"] = [
+                {"type": "function", "function": {"name": call.name, "arguments": json.dumps(call.arguments)}}
+                for call in self.tool_calls
+            ]
+        return data
 
 
-class Message(SubscriptableBaseModel):
-    class ToolCall(SubscriptableBaseModel):
-        class Function(SubscriptableBaseModel):
-            def __init__(self, name: str, arguments: dict[str, Any]):
-                self.name = name
-                self.arguments = arguments
-
-        def __init__(self, function: Message.ToolCall.Function):
-            self.function = function
-
-    def __init__(
-            self,
-            role: str,
-            content: Optional[str] = None,
-            tool_calls: Optional[list[Message.ToolCall]] = None,
-            done: Optional[bool] = None,
-            done_reason: Optional[str] = None,
-    ):
-        self.role = role
-        self.content = content
-        self.tool_calls = tool_calls or []
-        self.done = done
-        self.done_reason = done_reason
+@dataclass
+class ToolCall:
+    name: str
+    arguments: dict[str, Any]
 
 
-class ChatResponse(BaseGenerateResponse):
-    def __init__(
-            self,
-            message: Message,
-            **kwargs: Any,
-    ):
-        super().__init__(**kwargs)
-        self.message = message
+@dataclass
+class Tool:
+    type = "function"
 
+    @dataclass
+    class Function:
+        """Function tool definition."""
+        name: str
+        parameters: dict
+        description: Optional[str] = None
 
-# Tool and Options types
-class Tool(SubscriptableBaseModel):
-    def __init__(
-            self,
-            name: str,
-            parameters: Mapping[str, Any],
-            description: Optional[str] = None,
-    ):
-        self.name = name
-        self.parameters = parameters
-        self.description = description
+    function: Function
 
-
-class Options(SubscriptableBaseModel):
-    def __init__(self, **options: Any):
-        for k, v in options.items():
-            setattr(self, k, v)
+    def to_dict(self) -> dict[str, Any]:
+        """Convert the tool to a dictionary for API requests."""
+        return {
+            "type": self.type,
+            "function": {
+                "name": self.function.name,
+                "parameters": self.function.parameters,
+                "description": self.function.description,
+            }
+        }
 
 
 # The client that makes API calls
 class LlamaCppClient:
-    def __init__(self, base_url: str = "http://localhost:8080"):
+    def __init__(self, hass: HomeAssistant, base_url: str = "http://localhost:8080"):
         self.base_url = base_url.rstrip("/")
-        self._client = httpx.AsyncClient(base_url=self.base_url)
+        self._client = get_async_client(hass)
 
     async def chat(
             self,
-            model: str = "",
-            messages: Optional[Sequence[Union[Mapping[str, Any], Message]]] = None,
+            messages: Optional[list[Message]] = None,
             *,
-            tools: Optional[Sequence[Union[Mapping[str, Any], Tool, Callable]]] = None,
-            stream: Literal[False] = False,
-            options: Optional[Union[Mapping[str, Any], Options]] = None,
-            keep_alive: Optional[Union[float, str]] = None,
-    ) -> Union[ChatResponse, _AsyncGen[Message]]:
+            tools: Optional[list[Tool]] = None,
+            stream: bool = False,
+    ) -> AsyncGenerator[Message, None]:
         """
         Call the /v1/chat/completions endpoint on the Llama.cpp OpenAI-compatible server.
         Returns a ChatResponse if stream=False, otherwise an async generator yielding Message.
         """
-        url = "/v1/chat/completions"
+        url = self.base_url + "/v1/chat/completions"
         payload: dict[str, Any] = {
-            "model": model,
-            "messages": [
-                m if isinstance(m, Mapping) else m.__dict__ for m in (messages or [])
-            ],
+            "messages": [msg.to_dict() for msg in messages] if messages else [],
             "stream": stream,
         }
-        if tools:
-            payload["tools"] = tools
 
-        if options:
-            payload["options"] = (
-                options if isinstance(options, Mapping) else options.__dict__
-            )
-        if keep_alive is not None:
-            payload["keep_alive"] = keep_alive
+        if tools:
+            payload["tools"] = [tool.to_dict() for tool in tools]
 
         try:
             if not stream:
@@ -188,77 +132,29 @@ class LlamaCppClient:
                 data = resp.json()
                 choice = data["choices"][0]["message"]
 
-                tool_calls: list[Message.ToolCall] = []
-                for call in choice.get("tool_calls", []):
-                    fn = call["function"]
-                    args = fn.get("arguments", {})
-                    # sometimes arguments come back as a JSON string
-                    if isinstance(args, str):
-                        try:
-                            args = json.loads(args)
-                        except json.JSONDecodeError:
-                            pass
-                    tool_calls.append(
-                        Message.ToolCall(
-                            Message.ToolCall.Function(
-                                name=fn["name"],
-                                arguments=args,
-                            )
+                # build a one‐shot async generator
+                async def fake_stream() -> AsyncGenerator[Message, None]:
+                    tool_calls = [
+                        ToolCall(
+                            name=call["function"]["name"],
+                            arguments=json.loads(call["function"]["arguments"])
+                            # TODO: make sure JSON is valid and fix common issues with LLMs
+
                         )
+                        for call in choice.get("tool_calls", [])
+                    ]
+                    # yield one message with both content and tool_calls, marked done
+                    yield Message(
+                        role=choice["role"],
+                        content=choice.get("content").replace("\n\n", "", 1),  # remove the first \n\n
+                        reasoning_content=choice.get("reasoning_content"),
+                        tool_calls=tool_calls,
+                        done=True,
+                        done_reason="stop",
                     )
 
-                msg = Message(
-                    role=choice["role"],
-                    content=choice.get("content"),
-                    tool_calls=tool_calls,
-                    done=True,
-                    done_reason=data["choices"][0].get("finish_reason"),
-                )
-
-                return ChatResponse(
-                    message=msg,
-                    model=data.get("model"),
-                    created_at=data.get("created"),
-                    done=data["choices"][0].get("finish_reason") is not None,
-                    done_reason=data["choices"][0].get("finish_reason"),
-                )
+                return fake_stream()
             else:
-                # async def _stream() -> AsyncGenerator[Message, None]:
-                #     async with self._client.stream("POST", url, json=payload) as resp:
-                #         resp.raise_for_status()
-                #         async for line in resp.aiter_lines():
-                #             if not line or line == "[DONE]":
-                #                 break
-                #             # Lines are prefixed "data: "
-                #             if line.startswith("data:"):
-                #                 raw = line[len("data:"):].strip()
-                #                 part = json.loads(raw)
-                #                 # Each part has choices array
-                #                 for choice in part.get("choices", []):
-                #                     delta = choice.get("delta", {})
-                #                     role = delta.get("role")
-                #                     content = delta.get("content")
-                #                     fc = delta.get("function_call")
-                #                     tool_calls = []
-                #                     if fc:
-                #                         # accumulate arguments in streaming
-                #                         tool_calls = [
-                #                             Message.ToolCall(
-                #                                 Message.ToolCall.Function(
-                #                                     name=fc.get("name"),
-                #                                     arguments=json.loads(fc.get("arguments", "{}"))
-                #                                 )
-                #                             )
-                #                         ]
-                #                     yield Message(
-                #                         role=role,
-                #                         content=content,
-                #                         tool_calls=tool_calls,
-                #                         done=choice.get("finish_reason") is not None,
-                #                         done_reason=choice.get("finish_reason"),
-                #                     )
-                #
-                # return _stream()
                 raise NotImplementedError("Streaming not supported yet")
 
         except httpx.HTTPStatusError as e:
