@@ -29,6 +29,8 @@ section of the Home Assistant UI and used to interact with the LLM.
 
 ### Via HACS
 
+[![My Home Assistant](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?repository=llama-assist&owner=M4TH1EU&category=Integration)
+
 1. Install [HACS](https://hacs.xyz/) if not already installed.
 2. In Home Assistant, go to "HACS" in the sidebar.
 3. Click on "Integrations."
