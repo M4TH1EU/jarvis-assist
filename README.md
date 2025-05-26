@@ -6,11 +6,11 @@
 ![img.png](.github/images/llama-assist-logo-text-small.svg)
 
 Llama Assist is a Home Assistant integration that allows you to interact with almost any LLM (Large Language Model)
-with any LLM backend that is OpenAI-API compatible, such as the [llama.cpp](https://github.com/ggml-org/llama.cpp) backend.
+with any LLM backend that is OpenAI-API compatible, such as the [llama.cpp](https://github.com/ggml-org/llama.cpp)
+backend.
 
-This integration creates a new **Conversation agent** in Home Assistant, which can be selected in the **Voice Assistants
-**
-section of the Home Assistant UI and used to interact with the LLM.
+This integration creates a new **Conversation agent** in Home Assistant, which can be selected in the
+**Voice Assistants** section of the Home Assistant UI and used to interact with the LLM.
 
 > [!IMPORTANT]
 > This is NOT a llama.cpp backend, it connects to an existing llama.cpp backend running on your local network or
@@ -21,7 +21,8 @@ section of the Home Assistant UI and used to interact with the LLM.
 
 - Lightweight and fast
 - Easy to set up and use
-- **Supports any LLMs supported by [llama.cpp](https://github.com/ggml-org/llama.cpp) _(or others OpenAI-API compatible backends)_**
+- **Supports any LLMs supported
+  by [llama.cpp](https://github.com/ggml-org/llama.cpp) _(or others OpenAI-API compatible backends)_**
 - Supports all built-in Home Assistant **Assist** actions
 - Additional actions for more advanced interactions _(COMING SOON)_
 
@@ -51,10 +52,12 @@ section of the Home Assistant UI and used to interact with the LLM.
 
 Go to Settings -> Devices & Services -> Add Integration and search for "Llama Assist".
 Fill in the required fields:
-- **URL**: The URL of the [llama.cpp HTTP backend](https://github.com/ggml-org/llama.cpp/tree/master/tools/server). This can be a local IP address or a public URL. (ex: http://localhost:8080)
 
+- **URL**: The URL of the [llama.cpp HTTP backend](https://github.com/ggml-org/llama.cpp/tree/master/tools/server). This
+  can be a local IP address or a public URL. (ex: http://localhost:8080)
 
-To use this integration, you must setup a [llama.cpp HTTP backend](https://github.com/ggml-org/llama.cpp/tree/master/tools/server).
+To use this integration, you must setup
+a [llama.cpp HTTP backend](https://github.com/ggml-org/llama.cpp/tree/master/tools/server).
 See instructions [here](https://github.com/ggml-org/llama.cpp/tree/master/tools/server)
 
 ### Build llama.cpp
@@ -175,4 +178,4 @@ cmake --build build --config Release -- -j $MAX_THREADS
 </details>
 
 ### Other backends?
-While untested, any OpenAI-API compatible backend should work with this integration.
+The recommended way is to use [llama.cpp](https://github.com/ggml-org/llama.cpp) but, while untested, any OpenAI-API compatible backend should work with this integration.
