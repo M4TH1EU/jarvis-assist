@@ -8,16 +8,16 @@ from typing import Any, Mapping
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigFlow, ConfigEntry, OptionsFlow
-from homeassistant.const import CONF_URL, CONF_LLM_HASS_API
+from homeassistant.const import CONF_URL
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import llm
-from homeassistant.helpers.llm import AssistAPI
 from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType, SelectOptionDict, \
     TemplateSelector, SelectSelector, SelectSelectorConfig, NumberSelector, NumberSelectorConfig, NumberSelectorMode
 
 from . import LlamaCppClient, LlamaAssistAPI
 from .const import DOMAIN, DEFAULT_TIMEOUT, CONF_PROMPT, CONF_MAX_HISTORY, DEFAULT_MAX_HISTORY, LLAMA_LLM_API, \
     DISABLE_REASONING, CONF_DISABLE_REASONING, EXISTING_TOOLS, CONF_BLACKLIST_TOOLS
+from .llamacpp_adapter import RequestError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ class LlamaAssistConfigFlow(ConfigFlow, domain=DOMAIN):
 
             async with asyncio.timeout(DEFAULT_TIMEOUT):
                 await self.client.health()
-        except TimeoutError:
+        except TimeoutError | RequestError:
             errors["base"] = "cannot_connect"
         except Exception:
             _LOGGER.exception("Unexpected exception")
@@ -96,21 +96,21 @@ def llama_assist_config_option_schema(
         hass: HomeAssistant, options: Mapping[str, Any]
 ) -> dict:
     """Ollama options schema."""
-    hass_apis: list[SelectOptionDict] = []
+    # hass_apis: list[SelectOptionDict] = []
     tools: list[SelectOptionDict] = []
 
-    api: AssistAPI
-    for api in llm.async_get_apis(hass):
-        hass_apis.append(SelectOptionDict(
-            label=api.name,
-            value=api.id,
-        ))
+    # api: AssistAPI
+    # for api in llm.async_get_apis(hass):
+    #     hass_apis.append(SelectOptionDict(
+    #         label=api.name,
+    #         value=api.id,
+    #     ))
 
-        for tool in EXISTING_TOOLS:
-            tools.append(SelectOptionDict(
-                label=tool,
-                value=tool,
-            ))
+    for tool in EXISTING_TOOLS:
+        tools.append(SelectOptionDict(
+            label=tool,
+            value=tool,
+        ))
 
     return {
         vol.Optional(
@@ -121,10 +121,10 @@ def llama_assist_config_option_schema(
                 )
             },
         ): TemplateSelector(),
-        vol.Optional(
-            CONF_LLM_HASS_API,
-            description={"suggested_value": options.get(CONF_LLM_HASS_API)},
-        ): SelectSelector(SelectSelectorConfig(options=hass_apis, multiple=True)),
+        # vol.Optional(
+        #     CONF_LLM_HASS_API,
+        #     description={"suggested_value": options.get(CONF_LLM_HASS_API)},
+        # ): SelectSelector(SelectSelectorConfig(options=hass_apis, multiple=True)),
         vol.Optional(
             CONF_MAX_HISTORY,
             description={

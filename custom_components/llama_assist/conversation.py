@@ -3,10 +3,10 @@ from typing import Literal, Callable, Any, AsyncGenerator
 
 from homeassistant.components import assist_pipeline, conversation
 from homeassistant.components.conversation import AbstractConversationAgent, ConversationEntityFeature, \
-    ConversationInput, ConversationResult
+    ConversationInput, ConversationResult, trace
 from homeassistant.components.conversation import ConversationEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import MATCH_ALL, CONF_LLM_HASS_API
+from homeassistant.const import MATCH_ALL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import llm, chat_session
@@ -15,7 +15,7 @@ from homeassistant.helpers.intent import IntentResponse
 from voluptuous_openapi import convert
 
 from . import LOGGER, DOMAIN
-from .const import CONF_PROMPT, CONF_MAX_HISTORY, DEFAULT_MAX_HISTORY, CONF_DISABLE_REASONING
+from .const import CONF_PROMPT, CONF_MAX_HISTORY, DEFAULT_MAX_HISTORY, CONF_DISABLE_REASONING, LLAMA_LLM_API
 from .llamacpp_adapter import Message, MessageHistory, MessageRole, Tool, ToolCall
 
 # Max number of back and forth with the LLM to generate a response
@@ -180,7 +180,8 @@ class LlamaConversationEntity(ConversationEntity, AbstractConversationAgent):
             await chat_log.async_update_llm_data(
                 conversing_domain=DOMAIN,
                 user_input=user_input,
-                user_llm_hass_api=settings.get(CONF_LLM_HASS_API),
+                # user_llm_hass_api=settings.get(CONF_LLM_HASS_API),
+                user_llm_hass_api=LLAMA_LLM_API,
                 user_llm_prompt=settings.get(CONF_PROMPT),
             )
         except conversation.ConverseError as err:

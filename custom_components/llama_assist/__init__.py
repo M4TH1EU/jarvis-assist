@@ -10,8 +10,8 @@ from homeassistant.const import Platform, CONF_URL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import llm
-from homeassistant.helpers.llm import API, LLMContext, APIInstance
 
+from llm import LlamaAssistAPI
 from .const import DOMAIN, DEFAULT_TIMEOUT, LLAMA_LLM_API, CONF_BLACKLIST_TOOLS
 from .llamacpp_adapter import LlamaCppClient
 
@@ -47,24 +47,3 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data[DOMAIN].pop(entry.entry_id)
     return True
-
-
-class LlamaAssistAPI(API):
-    """My own API for LLMs."""
-
-    def __init__(self, hass: HomeAssistant) -> None:
-        """Initialize the API."""
-        super().__init__(
-            hass=hass,
-            id=LLAMA_LLM_API,
-            name="Llama Assist",
-        )
-
-    async def async_get_api_instance(self, llm_context: LLMContext) -> APIInstance:
-        """Return the instance of the API."""
-        return APIInstance(
-            api=self,
-            api_prompt="Call the tools to fetch data from Home Assistant.",
-            llm_context=llm_context,
-            tools=[],
-        )
