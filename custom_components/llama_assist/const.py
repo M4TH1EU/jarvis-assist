@@ -1,4 +1,4 @@
-DOMAIN = "llamacpp_assist"
+DOMAIN = "llama_assist"
 LLAMA_LLM_API = DOMAIN + "_api"
 
 CONF_SERVER_URL = "server-url"

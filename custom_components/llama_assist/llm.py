@@ -16,7 +16,8 @@ from homeassistant.helpers.llm import LLMContext, API, APIInstance, _get_exposed
     GetLiveContextTool
 from homeassistant.util import yaml as yaml_util
 
-from custom_components.llama_assist.const import LLAMA_LLM_API
+from const import USE_EMBEDDINGS_ENTITIES
+from custom_components.llama_assist.const import LLAMA_LLM_API, DOMAIN
 
 
 class LlamaAssistAPI(API):
@@ -35,7 +36,7 @@ class LlamaAssistAPI(API):
         intent.INTENT_RESPOND,
     }
 
-    def __init__(self, hass: HomeAssistant, use_embedding_for_entities=True) -> None:
+    def __init__(self, hass: HomeAssistant) -> None:
         """Initialize the API."""
         super().__init__(
             hass=hass,
@@ -47,16 +48,22 @@ class LlamaAssistAPI(API):
         )
 
         self.all_exposed_entities: dict | None = None
-        self.use_embedding_for_entities = use_embedding_for_entities
 
     async def async_get_api_instance(self, llm_context: LLMContext) -> APIInstance:
         """Return the instance of the API."""
         exposed_entities: dict | None = None
+        use_embedding_for_entities = USE_EMBEDDINGS_ENTITIES
+
+        # Hack to check if option "use embeddings for entities" is set without additional function parameters
+        for config_entry in self.hass.config_entries.async_entries(DOMAIN):
+            if config_entry.entry_id == llm_context.context.id:
+                use_embedding_for_entities = config_entry.options.get("use_embeddings_entities",
+                                                                      USE_EMBEDDINGS_ENTITIES)
 
         if llm_context.assistant:
             _exposed_entities = _get_exposed_entities(self.hass, llm_context.assistant, include_state=False)
 
-            if self.use_embedding_for_entities:
+            if use_embedding_for_entities:
                 # Save the exposed entities to add only the useful ones at each prompt
                 self.all_exposed_entities = _exposed_entities
             else:

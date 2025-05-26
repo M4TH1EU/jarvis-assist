@@ -13,18 +13,20 @@
     },
     "abort": {
       "already_configured": "This server is already configured"
-    },
-    "options": {
-      "flow_title": "Llama Assist Options",
-      "step": {
-        "init": {
-          "data": {
-            "prompt": "System prompt",
-            "llm_hass_api": "Which LLM APIs to use (provides the tools to interact with Home Assistant)",
-            "max_history": "Maximum conversation history length",
-            "disable_reasoning": "Disable model reasoning (will impact quality in favor of speed)",
-            "blacklist_tools": "Tools to disable (improves speed)"
-          }
+    }
+  },
+  "options": {
+    "step": {
+      "user": {
+        "title": "Llama Assist Options",
+        "data": {
+          "prompt": "System prompt",
+          "llm_hass_api": "Which LLM APIs to use (provides the tools to interact with Home Assistant)",
+          "max_history": "Maximum conversation history length",
+          "disable_reasoning": "Disable model reasoning (will impact quality in favor of speed)",
+          "blacklist_tools": "Tools to disable (improves speed)",
+          "use_embeddings_tools": "Use embeddings to filter tools (improves speed)",
+          "use_embeddings_entities": "Use embeddings to filter entities (improves speed)"
         }
       }
     }

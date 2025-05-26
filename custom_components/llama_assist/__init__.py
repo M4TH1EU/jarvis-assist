@@ -11,7 +11,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import llm
 
-from const import CONF_USE_EMBEDDINGS_ENTITIES
 from llm import LlamaAssistAPI
 from .const import DOMAIN, DEFAULT_TIMEOUT, LLAMA_LLM_API, CONF_BLACKLIST_TOOLS
 from .llamacpp_adapter import LlamaCppClient
@@ -25,7 +24,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     settings = {**entry.data, **entry.options}
 
     if not any([x.id == LLAMA_LLM_API for x in llm.async_get_apis(hass)]):
-        llm.async_register_api(hass, LlamaAssistAPI(hass, settings.get(CONF_USE_EMBEDDINGS_ENTITIES)))
+        llm.async_register_api(hass, LlamaAssistAPI(hass))
 
     client = LlamaCppClient(base_url=settings.get(CONF_URL), hass=hass,
                             blacklist_tools=settings.get(CONF_BLACKLIST_TOOLS, []))
