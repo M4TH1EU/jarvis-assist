@@ -151,6 +151,10 @@ class LlamaCppClient:
                 reasoning_content = choice.get("reasoning_content", "")
 
                 LOGGER.debug(f"""
+                Payload Details:
+                 - Tools: {', '.join(tool.function.name for tool in tools or [])}
+                 - Latest system message: {payload["messages"][-2].get("content", "") if payload["messages"][-2]["role"] == MessageRole.SYSTEM else "<no system message>"}
+                
                 Llama.cpp Details:
                  - Time (prompt) : {data.get("timings").get("prompt_ms")} ms
                  - Time (completion) : {data.get("timings").get("predicted_ms")} ms
@@ -160,6 +164,10 @@ class LlamaCppClient:
                  
                  - Content : {content}
                  - Reasoning Content : {reasoning_content}
+                 - Tool Calls : {choice.get("tool_calls", [])}
+                 
+                 Full payload: {json.dumps(payload)}
+                 
                 """)
 
                 tool_calls = [
@@ -167,7 +175,6 @@ class LlamaCppClient:
                         name=call["function"]["name"],
                         arguments=json.loads(call["function"]["arguments"])
                         # TODO: make sure JSON is valid and fix common issues with LLMs
-
                     )
                     for call in choice.get("tool_calls", [])
                 ]

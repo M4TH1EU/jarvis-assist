@@ -33,3 +33,5 @@ EXISTING_TOOLS = [
     'todo_get_items',
     'GetLiveContext'
 ]
+
+CHROMADB_PATH = "./chroma_llama_assist_db"

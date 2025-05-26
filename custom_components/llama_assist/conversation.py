@@ -17,7 +17,7 @@ from voluptuous_openapi import convert
 
 from const import CONF_USE_EMBEDDINGS_TOOLS, CONF_USE_EMBEDDINGS_ENTITIES
 from custom_components.llama_assist import LlamaAssistAPI
-from embeddings import get_matching_tools, get_matching_entities
+from embeddings import get_matching_tools, get_matching_entities, create_chroma
 from . import LOGGER, DOMAIN
 from .const import CONF_PROMPT, CONF_MAX_HISTORY, DEFAULT_MAX_HISTORY, CONF_DISABLE_REASONING, LLAMA_LLM_API
 from .llamacpp_adapter import Message, MessageHistory, MessageRole, Tool, ToolCall
@@ -139,9 +139,12 @@ class LlamaConversationEntity(ConversationEntity, AbstractConversationAgent):
             ConversationEntityFeature.CONTROL
         )
 
+        self.llama_chroma = None
+
     async def async_added_to_hass(self) -> None:
         """When entity is added to Home Assistant."""
         await super().async_added_to_hass()
+
         assist_pipeline.async_migrate_engine(
             self.hass, "conversation", self.entry.entry_id, self.entity_id
         )
@@ -149,6 +152,8 @@ class LlamaConversationEntity(ConversationEntity, AbstractConversationAgent):
         self.entry.async_on_unload(
             self.entry.add_update_listener(self._async_entry_update_listener)
         )
+
+        self.llama_chroma = await create_chroma(self.hass, self.entry.entry_id)
 
     async def async_will_remove_from_hass(self) -> None:
         """When entity will be removed from Home Assistant."""
@@ -178,7 +183,7 @@ class LlamaConversationEntity(ConversationEntity, AbstractConversationAgent):
 
         use_stream = False
 
-        client = self.hass.data[DOMAIN][self.entry.entry_id]
+        client = self.hass.data[DOMAIN][self.entry.entry_id]["client"]
 
         try:
             await chat_log.async_update_llm_data(
@@ -195,7 +200,8 @@ class LlamaConversationEntity(ConversationEntity, AbstractConversationAgent):
         if settings.get(CONF_USE_EMBEDDINGS_ENTITIES):
             if isinstance(chat_log.llm_api.api, LlamaAssistAPI):
                 _all_exposed_entities = chat_log.llm_api.api.all_exposed_entities
-                matching_entities = get_matching_entities(user_input.text, _all_exposed_entities)
+                matching_entities = await get_matching_entities(self.llama_chroma, user_input.text,
+                                                                _all_exposed_entities)
 
                 prompt = []
 
@@ -205,16 +211,15 @@ class LlamaConversationEntity(ConversationEntity, AbstractConversationAgent):
                     )
                     prompt.append(yaml_util.dump(list(matching_entities["entities"].values())))
 
-                chat_log.content.append(
-                    SystemContent(
-                        content="\n".join(prompt),
-                    )
+                chat_log.content.insert(
+                    len(chat_log.content) - 1,
+                    SystemContent(content="\n".join(prompt))
                 )
 
         tools: list[Tool] = []
         if chat_log.llm_api:
             if settings.get(CONF_USE_EMBEDDINGS_TOOLS):
-                tools_to_use = get_matching_tools(user_input.text, chat_log.llm_api.tools)
+                tools_to_use = await get_matching_tools(self.llama_chroma, user_input.text, chat_log.llm_api.tools)
             else:
                 tools_to_use = chat_log.llm_api.tools
 

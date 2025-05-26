@@ -48,22 +48,23 @@ class LlamaAssistAPI(API):
         )
 
         self.all_exposed_entities: dict | None = None
+        self.use_embedding_for_entities = USE_EMBEDDINGS_ENTITIES
 
     async def async_get_api_instance(self, llm_context: LLMContext) -> APIInstance:
         """Return the instance of the API."""
         exposed_entities: dict | None = None
-        use_embedding_for_entities = USE_EMBEDDINGS_ENTITIES
+        self.use_embedding_for_entities = USE_EMBEDDINGS_ENTITIES
 
         # Hack to check if option "use embeddings for entities" is set without additional function parameters
         for config_entry in self.hass.config_entries.async_entries(DOMAIN):
             if config_entry.entry_id == llm_context.context.id:
-                use_embedding_for_entities = config_entry.options.get("use_embeddings_entities",
-                                                                      USE_EMBEDDINGS_ENTITIES)
+                self.use_embedding_for_entities = config_entry.options.get("use_embeddings_entities",
+                                                                           USE_EMBEDDINGS_ENTITIES)
 
         if llm_context.assistant:
             _exposed_entities = _get_exposed_entities(self.hass, llm_context.assistant, include_state=False)
 
-            if use_embedding_for_entities:
+            if self.use_embedding_for_entities:
                 # Save the exposed entities to add only the useful ones at each prompt
                 self.all_exposed_entities = _exposed_entities
             else:
@@ -79,17 +80,16 @@ class LlamaAssistAPI(API):
         )
 
     @callback
-    def _async_get_api_prompt(
-            self, llm_context: LLMContext, exposed_entities: dict | None
-    ) -> str:
+    def _async_get_api_prompt(self, llm_context: LLMContext, exposed_entities: dict | None) -> str:
         if not exposed_entities or not exposed_entities["entities"]:
             return NO_ENTITIES_PROMPT
-        return "\n".join(
-            [
-                *self._async_get_preable(llm_context),
-                *self._async_get_exposed_entities_prompt(llm_context, exposed_entities),
-            ]
-        )
+
+        parts = [*self._async_get_preable(llm_context)]
+
+        if not self.use_embedding_for_entities:
+            parts += self._async_get_exposed_entities_prompt(llm_context, exposed_entities)
+
+        return "\n".join(parts)
 
     @callback
     def _async_get_preable(self, llm_context: LLMContext) -> list[str]:

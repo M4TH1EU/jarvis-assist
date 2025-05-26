@@ -17,16 +17,17 @@ This integration creates a new **Conversation agent** in Home Assistant, which c
 > accessible
 > via the internet.
 
-## Features
+## 🧰 Features
 
 - Lightweight and fast
 - Easy to set up and use
 - **Supports any LLMs supported
   by [llama.cpp](https://github.com/ggml-org/llama.cpp) _(or others OpenAI-API compatible backends)_**
 - Supports all built-in Home Assistant **Assist** actions
+- **Supports embeddings for lightning fast responses (-50%) and lower token count (-65%)**
 - Additional actions for more advanced interactions _(COMING SOON)_
 
-## Installation
+## 📖 Installation
 
 ### Via HACS
 
@@ -48,7 +49,7 @@ This integration creates a new **Conversation agent** in Home Assistant, which c
 3. Copy the `custom_components/easy_computer_manager` directory to the `config/custom_components/` directory in your
    Home Assistant instance.
 
-## Usage
+## 🛠️ Usage
 
 Go to Settings -> Devices & Services -> Add Integration and search for "Llama Assist".
 Fill in the required fields:
@@ -60,7 +61,17 @@ To use this integration, you must setup
 a [llama.cpp HTTP backend](https://github.com/ggml-org/llama.cpp/tree/master/tools/server).
 See instructions [here](https://github.com/ggml-org/llama.cpp/tree/master/tools/server)
 
-### Build llama.cpp
+### Recommended models
+
+| Model Name | Size | Notes                                                       |
+|------------|------|-------------------------------------------------------------|
+| Qwen3-0.6B | 0.6B | Fast and lightweight, good for CPU (with reasoning enabled) |
+| Qwen3-1.7B | 1.7B | Good balance between speed and quality                      |
+
+> [!NOTE]
+> If you have good experiences with other models, please open an issue or a pull request to add them to this list.
+
+### ⚙️ Build llama.cpp
 
 Official documentation can be found [here](https://github.com/ggml-org/llama.cpp/tree/master).
 
@@ -177,5 +188,55 @@ cmake --build build --config Release -- -j $MAX_THREADS
 *The executables will be in `sources/build/bin/llama-server`*
 </details>
 
-### Other backends?
-The recommended way is to use [llama.cpp](https://github.com/ggml-org/llama.cpp) but, while untested, any OpenAI-API compatible backend should work with this integration.
+### 🖥️ Other backends?
+
+The recommended way is to use [llama.cpp](https://github.com/ggml-org/llama.cpp) but, while untested, any OpenAI-API
+compatible backend should work with this integration.
+
+## 💨 Embeddings
+
+Llama Assist supports embeddings, which can significantly improve the performance of the system by reducing the amount
+of entities and functions descriptions that need to be processed by the LLM in the initial and subsequent requests.
+This is especially useful for low-end systems or when you have a lot of entities and functions in your Home Assistant.
+
+Embeddings are enabled by default, but you can disable them in the configuration if you want to use the system without
+them.
+
+> [!NOTE]
+> Embeddings work by analyzing the user input and the available entities and functions in Home Assistant, and then
+> tries to find the most relevant entities and functions to use in the response.  
+> While this is generally very effective, it can sometimes lead to unexpected results, such as the system not
+> recognizing an entity or function that you expect it to recognize.  
+> Please report any issues you encounter with embeddings to help improve the system.
+
+In this example, we compare the system behavior with and without embeddings on a low-end system **(CPU only, Intel
+i5-11400, 4 cores)** for
+a simple request:
+
+```yaml
+User: Hi Jarvis!
+Assistant (1): Hello! How can I assist you today?
+User: Add strawberries to my shopping list.
+ToolCall (2): HassShoppingListAddItem
+Assistant (3): Strawberries have been added to your shopping list.
+```
+
+**Without embeddings:**
+
+| Message | Time (ms)           | Tokens (Prompt + Completion) | Content Summary                     |
+|---------|---------------------|------------------------------|-------------------------------------|
+| 1       | `7855 + 2581 = 10s` | `1920 + 84`                  | Greeting                            |
+| 2       | `8477 + 4282 = 13s` | `1947 + 136`                 | 🔧 ToolCall → Add to Shopping List  |
+| 3       | `712 + 3944 = 5s`   | `2042 + 120`                 | ✅ Confirmation (Strawberries added) |
+| Total   | ~28s                | ~6200                        |                                     |
+
+**With embeddings:**
+
+| Message | Time (ms)          | Tokens (Prompt + Completion) | Content Summary                     |
+|---------|--------------------|------------------------------|-------------------------------------|
+| 1       | `1700 + 2312 = 4s` | `584 + 90`                   | Greeting                            |
+| 2       | `1483 + 2554 = 4s` | `497 + 102`                  | 🔧 ToolCall → Add to Shopping List  |
+| 3       | `445 + 3375 = 4s`  | `592 + 131`                  | ✅ Confirmation (Strawberries added) |
+| Total   | ~12s               | ~2000                        |                                     |
+
+This reduction in time and tokens enables low-end systems to use LLMs more effectively.
