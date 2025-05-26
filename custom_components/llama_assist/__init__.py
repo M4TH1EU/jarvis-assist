@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import llm
 
+from embeddings import get_or_create_collections, get_or_create_chroma_client
 from llm import LlamaAssistAPI
 from .const import DOMAIN, DEFAULT_TIMEOUT, LLAMA_LLM_API, CONF_BLACKLIST_TOOLS
 from .llamacpp_adapter import LlamaCppClient
@@ -34,8 +35,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except TimeoutError as err:
         raise ConfigEntryNotReady(err) from err
 
+    # Create shared ChromaDB client and collections for tools and entities of each entry
+    colls = await get_or_create_collections(await get_or_create_chroma_client(hass), entry.entry_id)
+
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
-        "client": client
+        "client": client,
+        "colls": colls
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

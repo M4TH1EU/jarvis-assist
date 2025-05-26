@@ -80,7 +80,7 @@ _You might be able to use pre-built executable which can be found in the release
 > [!NOTE]
 > Theses scripts are provided as examples that worked for me, you may need to adapt them to your system.  
 > **Please do NOT open issues related to building llama.cpp, this is not the purpose of this repository.**  
-> If you have issues, please open an issue on the llama.cpp repository.
+> _If you have issues, please open an issue on the llama.cpp repository._
 
 <details>
 <summary>Intel CPUs (oneAPI)</summary>
@@ -207,7 +207,7 @@ them.
 > tries to find the most relevant entities and functions to use in the response.  
 > While this is generally very effective, it can sometimes lead to unexpected results, such as the system not
 > recognizing an entity or function that you expect it to recognize.  
-> Please report any issues you encounter with embeddings to help improve the system.
+> _Please report any issues you encounter with embeddings to help improve the system._
 
 In this example, we compare the system behavior with and without embeddings on a low-end system **(CPU only, Intel
 i5-11400, 4 cores)** for
