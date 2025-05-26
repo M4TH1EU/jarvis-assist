@@ -3,7 +3,7 @@ from typing import Literal, Callable, Any, AsyncGenerator
 
 from homeassistant.components import assist_pipeline, conversation
 from homeassistant.components.conversation import AbstractConversationAgent, ConversationEntityFeature, \
-    ConversationInput, ConversationResult, trace
+    ConversationInput, ConversationResult, SystemContent
 from homeassistant.components.conversation import ConversationEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import MATCH_ALL
@@ -12,8 +12,12 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import llm, chat_session
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.intent import IntentResponse
+from homeassistant.util import yaml as yaml_util
 from voluptuous_openapi import convert
 
+from const import CONF_USE_EMBEDDINGS_TOOLS, CONF_USE_EMBEDDINGS_ENTITIES
+from custom_components.llama_assist import LlamaAssistAPI
+from embeddings import get_matching_tools, get_matching_entities
 from . import LOGGER, DOMAIN
 from .const import CONF_PROMPT, CONF_MAX_HISTORY, DEFAULT_MAX_HISTORY, CONF_DISABLE_REASONING, LLAMA_LLM_API
 from .llamacpp_adapter import Message, MessageHistory, MessageRole, Tool, ToolCall
@@ -187,11 +191,36 @@ class LlamaConversationEntity(ConversationEntity, AbstractConversationAgent):
         except conversation.ConverseError as err:
             return err.as_conversation_result()
 
+        # If using embeddings entities, we need to get the relevant entities and add them to the chat log for the LLM
+        if settings.get(CONF_USE_EMBEDDINGS_ENTITIES):
+            if isinstance(chat_log.llm_api.api, LlamaAssistAPI):
+                _all_exposed_entities = chat_log.llm_api.api.all_exposed_entities
+                matching_entities = get_matching_entities(user_input.text, _all_exposed_entities)
+
+                prompt = []
+
+                if matching_entities and matching_entities["entities"]:
+                    prompt.append(
+                        "Static Context Update:"
+                    )
+                    prompt.append(yaml_util.dump(list(matching_entities["entities"].values())))
+
+                chat_log.content.append(
+                    SystemContent(
+                        content="\n".join(prompt),
+                    )
+                )
+
         tools: list[Tool] = []
         if chat_log.llm_api:
+            if settings.get(CONF_USE_EMBEDDINGS_TOOLS):
+                tools_to_use = get_matching_tools(user_input.text, chat_log.llm_api.tools)
+            else:
+                tools_to_use = chat_log.llm_api.tools
+
             tools = [
                 _format_tool(tool, chat_log.llm_api.custom_serializer)
-                for tool in chat_log.llm_api.tools
+                for tool in tools_to_use
             ]
 
         message_history: MessageHistory = MessageHistory(

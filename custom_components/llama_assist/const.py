@@ -12,6 +12,11 @@ DEFAULT_MAX_HISTORY = 20
 CONF_DISABLE_REASONING = "disable_reasoning"
 DISABLE_REASONING = False
 
+CONF_USE_EMBEDDINGS_TOOLS = "use_embeddings_tools"
+CONF_USE_EMBEDDINGS_ENTITIES = "use_embeddings_entities"
+USE_EMBEDDINGS_TOOLS = True
+USE_EMBEDDINGS_ENTITIES = True
+
 CONF_BLACKLIST_TOOLS = "blacklist_tools"
 EXISTING_TOOLS = [
     'HassTurnOn',

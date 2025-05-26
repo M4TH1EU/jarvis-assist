@@ -35,7 +35,7 @@ class LlamaAssistAPI(API):
         intent.INTENT_RESPOND,
     }
 
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(self, hass: HomeAssistant, use_embedding_for_entities=True) -> None:
         """Initialize the API."""
         super().__init__(
             hass=hass,
@@ -46,14 +46,22 @@ class LlamaAssistAPI(API):
             partial(unicode_slug.slugify, separator="_", lowercase=False)
         )
 
+        self.all_exposed_entities: dict | None = None
+        self.use_embedding_for_entities = use_embedding_for_entities
+
     async def async_get_api_instance(self, llm_context: LLMContext) -> APIInstance:
         """Return the instance of the API."""
+        exposed_entities: dict | None = None
+
         if llm_context.assistant:
-            exposed_entities: dict | None = _get_exposed_entities(
-                self.hass, llm_context.assistant, include_state=False
-            )
-        else:
-            exposed_entities = None
+            _exposed_entities = _get_exposed_entities(self.hass, llm_context.assistant, include_state=False)
+
+            if self.use_embedding_for_entities:
+                # Save the exposed entities to add only the useful ones at each prompt
+                self.all_exposed_entities = _exposed_entities
+            else:
+                # Default behavior, expose all entities (performance may be affected)
+                exposed_entities = _exposed_entities
 
         return APIInstance(
             api=self,

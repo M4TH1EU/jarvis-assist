@@ -14,6 +14,7 @@ from homeassistant.helpers import llm
 from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType, SelectOptionDict, \
     TemplateSelector, SelectSelector, SelectSelectorConfig, NumberSelector, NumberSelectorConfig, NumberSelectorMode
 
+from const import CONF_USE_EMBEDDINGS_TOOLS, USE_EMBEDDINGS_TOOLS, USE_EMBEDDINGS_ENTITIES, CONF_USE_EMBEDDINGS_ENTITIES
 from . import LlamaCppClient, LlamaAssistAPI
 from .const import DOMAIN, DEFAULT_TIMEOUT, CONF_PROMPT, CONF_MAX_HISTORY, DEFAULT_MAX_HISTORY, LLAMA_LLM_API, \
     DISABLE_REASONING, CONF_DISABLE_REASONING, EXISTING_TOOLS, CONF_BLACKLIST_TOOLS
@@ -46,7 +47,7 @@ class LlamaAssistConfigFlow(ConfigFlow, domain=DOMAIN):
         self.url = user_input.get(CONF_URL, self.url)
 
         if not any([x.id == LLAMA_LLM_API for x in llm.async_get_apis(self.hass)]):
-            llm.async_register_api(self.hass, LlamaAssistAPI(self.hass))
+            llm.async_register_api(self.hass, LlamaAssistAPI(self.hass, user_input.get(CONF_USE_EMBEDDINGS_ENTITIES)))
 
         if self.url is None:
             return self.async_show_form(step_id="user", data_schema=STEP_USER_DATA_SCHEMA, last_step=False)
@@ -139,6 +140,18 @@ def llama_assist_config_option_schema(
             CONF_DISABLE_REASONING,
             description={
                 "suggested_value": options.get(DISABLE_REASONING, False)
+            },
+        ): bool,
+        vol.Optional(
+            CONF_USE_EMBEDDINGS_TOOLS,
+            description={
+                "suggested_value": options.get(USE_EMBEDDINGS_TOOLS, False)
+            },
+        ): bool,
+        vol.Optional(
+            CONF_USE_EMBEDDINGS_ENTITIES,
+            description={
+                "suggested_value": options.get(USE_EMBEDDINGS_ENTITIES, False)
             },
         ): bool,
         vol.Optional(

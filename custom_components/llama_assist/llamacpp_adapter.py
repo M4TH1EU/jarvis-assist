@@ -150,6 +150,18 @@ class LlamaCppClient:
                 content = choice.get("content").replace("\n\n", "", 1)
                 reasoning_content = choice.get("reasoning_content", "")
 
+                LOGGER.debug(f"""
+                Llama.cpp Details:
+                 - Time (prompt) : {data.get("timings").get("prompt_ms")} ms
+                 - Time (completion) : {data.get("timings").get("predicted_ms")} ms
+                 
+                 - Tokens (prompt) : {data.get("usage").get("prompt_tokens")}
+                 - Tokens (completion) : {data.get("usage").get("completion_tokens")}
+                 
+                 - Content : {content}
+                 - Reasoning Content : {reasoning_content}
+                """)
+
                 tool_calls = [
                     ToolCall(
                         name=call["function"]["name"],
@@ -159,9 +171,6 @@ class LlamaCppClient:
                     )
                     for call in choice.get("tool_calls", [])
                 ]
-
-                LOGGER.debug("Reasoning : " + reasoning_content)
-                LOGGER.debug("Content: " + content)
 
                 # Try to parse service call from content if the model didn't return a tool call
                 if not tool_calls:
