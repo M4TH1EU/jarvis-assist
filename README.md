@@ -6,7 +6,7 @@
 ![img.png](.github/images/llama-assist-logo-text-small.svg)
 
 Llama Assist is a Home Assistant integration that allows you to interact with almost any LLM (Large Language Model)
-using the [llama.cpp](https://github.com/ggml-org/llama.cpp) backend.
+with any LLM backend that is OpenAI-API compatible, such as the [llama.cpp](https://github.com/ggml-org/llama.cpp) backend.
 
 This integration creates a new **Conversation agent** in Home Assistant, which can be selected in the **Voice Assistants
 **
@@ -21,7 +21,7 @@ section of the Home Assistant UI and used to interact with the LLM.
 
 - Lightweight and fast
 - Easy to set up and use
-- **Supports any LLMs supported by [llama.cpp](https://github.com/ggml-org/llama.cpp)**
+- **Supports any LLMs supported by [llama.cpp](https://github.com/ggml-org/llama.cpp) _(or others OpenAI-API compatible backends)_**
 - Supports all built-in Home Assistant **Assist** actions
 - Additional actions for more advanced interactions _(COMING SOON)_
 
