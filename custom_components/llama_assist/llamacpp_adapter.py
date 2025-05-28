@@ -222,6 +222,27 @@ class LlamaCppClient:
         except httpx.RequestError as e:
             raise RequestError(str(e))
 
+    async def embeddings(self, texts: list[str]) -> list[list[float]]:
+        """Call the /v1/embeddings endpoint to get embeddings for a list of texts."""
+        if not self.embeddings_base_url:
+            raise ValueError("Embeddings base URL is not set.")
+
+        url = f"{self.embeddings_base_url}/v1/embeddings"
+        payload = {
+            "input": texts,
+            "encoding_format": "float",
+        }
+
+        try:
+            resp = await self._client.post(url, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            return [item["embedding"] for item in data["data"]]
+        except httpx.HTTPStatusError as e:
+            raise ResponseError(e.response.text, e.response.status_code)
+        except httpx.RequestError as e:
+            raise RequestError(str(e))
+
 
 def parse_service_str(content: str, existing_tools: list[Tool]) -> Optional[list[ToolCall]]:
     """Try to parse the service call from the content."""
