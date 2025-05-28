@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-from typing import Any, Mapping
+from typing import Any
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigFlow, ConfigEntry, OptionsFlow
@@ -100,13 +100,14 @@ class LlamaAssistOptionsFlow(OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title=f"Llama Assist ({self.url})", data=user_input)
 
-        options: Mapping[str, Any] = self.config_entry.options or {}
-        schema = llama_assist_config_option_schema(self.hass, options)
+        settings = self.config_entry.data | self.config_entry.options
+
+        schema = llama_assist_config_option_schema(self.hass, options=settings)
         return self.async_show_form(step_id="user", data_schema=vol.Schema(schema))
 
 
 def llama_assist_config_option_schema(
-        hass: HomeAssistant, options: Mapping[str, Any]
+        hass: HomeAssistant, options: dict[str, Any]
 ) -> dict:
     """Ollama options schema."""
     # hass_apis: list[SelectOptionDict] = []

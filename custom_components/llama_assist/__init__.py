@@ -12,7 +12,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import llm as ha_llm
 
 from .const import DOMAIN, DEFAULT_TIMEOUT, LLAMA_LLM_API, CONF_BLACKLIST_TOOLS, CONF_SERVER_EMBEDDINGS_URL, \
-    CONF_COMPLETION_SERVER_URL
+    CONF_COMPLETION_SERVER_URL, CONF_USE_EMBEDDINGS_TOOLS, USE_EMBEDDINGS_TOOLS
 from .embeddings import get_or_create_collections, get_or_create_chroma_client
 from .llamacpp_adapter import LlamaCppClient
 from .llm import LlamaAssistAPI

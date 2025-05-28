@@ -16,7 +16,7 @@ from homeassistant.helpers.llm import LLMContext, API, APIInstance, _get_exposed
     GetLiveContextTool
 from homeassistant.util import yaml as yaml_util
 
-from .const import LLAMA_LLM_API, DOMAIN, USE_EMBEDDINGS_ENTITIES
+from .const import LLAMA_LLM_API, DOMAIN, USE_EMBEDDINGS_ENTITIES, CONF_COMPLETION_SERVER_URL
 
 
 class LlamaAssistAPI(API):
@@ -52,13 +52,16 @@ class LlamaAssistAPI(API):
     async def async_get_api_instance(self, llm_context: LLMContext) -> APIInstance:
         """Return the instance of the API."""
         exposed_entities: dict | None = None
-        self.use_embedding_for_entities = USE_EMBEDDINGS_ENTITIES
 
-        # Hack to check if option "use embeddings for entities" is set without additional function parameters
-        for config_entry in self.hass.config_entries.async_entries(DOMAIN):
-            if config_entry.entry_id == llm_context.context.id:
-                self.use_embedding_for_entities = config_entry.options.get("use_embeddings_entities",
-                                                                           USE_EMBEDDINGS_ENTITIES)
+        # # Hack to check if option "use embeddings for entities" is set without additional function parameters
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            url_from_context = llm_context.context.origin_event.data.get("old_state", {}).name.removeprefix(
+                "Llama Assist (").removesuffix(")")
+
+            if entry.data.get(CONF_COMPLETION_SERVER_URL, "") == url_from_context:
+                # If the entry's base URL matches the target ID, use the option for embeddings
+                self.use_embedding_for_entities = entry.options.get("use_embeddings_entities", USE_EMBEDDINGS_ENTITIES)
+                break
 
         if llm_context.assistant:
             _exposed_entities = _get_exposed_entities(self.hass, llm_context.assistant, include_state=False)
