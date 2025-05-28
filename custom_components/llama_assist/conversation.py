@@ -15,12 +15,12 @@ from homeassistant.helpers.intent import IntentResponse
 from homeassistant.util import yaml as yaml_util
 from voluptuous_openapi import convert
 
-from const import CONF_USE_EMBEDDINGS_TOOLS, CONF_USE_EMBEDDINGS_ENTITIES
-from custom_components.llama_assist import LlamaAssistAPI
-from embeddings import get_matching_tools, get_matching_entities
 from . import LOGGER, DOMAIN
-from .const import CONF_PROMPT, CONF_MAX_HISTORY, DEFAULT_MAX_HISTORY, CONF_DISABLE_REASONING, LLAMA_LLM_API
+from .const import CONF_PROMPT, CONF_MAX_HISTORY, DEFAULT_MAX_HISTORY, CONF_DISABLE_REASONING, LLAMA_LLM_API, \
+    CONF_USE_EMBEDDINGS_TOOLS, CONF_USE_EMBEDDINGS_ENTITIES
+from .embeddings import get_matching_tools, get_matching_entities
 from .llamacpp_adapter import Message, MessageHistory, MessageRole, Tool, ToolCall
+from .llm import LlamaAssistAPI
 
 # Max number of back and forth with the LLM to generate a response
 MAX_TOOL_ITERATIONS = 10

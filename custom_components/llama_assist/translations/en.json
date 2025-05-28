@@ -3,8 +3,11 @@
     "step": {
       "user": {
         "data": {
-          "url": "URL of the llama.cpp server"
-        }
+          "completion-server-url": "Completion server URL (v1/completions, OpenAI-compatible)",
+          "embeddings-server-url": "Embeddings server URL (v1/embeddings, OpenAI-compatible)"
+        },
+        "title": "Llama Assist Configuration",
+        "description": "Llama Assist needs an OpenAI-compatible server. Use a separate embedding server if needed; otherwise, leave the embedding URL empty. Embeddings speed up tool and entity filtering."
       }
     },
     "error": {
@@ -24,7 +27,7 @@
           "llm_hass_api": "Which LLM APIs to use (provides the tools to interact with Home Assistant)",
           "max_history": "Maximum conversation history length",
           "disable_reasoning": "Disable model reasoning (will impact quality in favor of speed)",
-          "blacklist_tools": "Tools to disable (improves speed)",
+          "embeddings-server-url": "Embeddings server URL (v1/embeddings, OpenAI-compatible)",
           "use_embeddings_tools": "Use embeddings to filter tools (improves speed)",
           "use_embeddings_entities": "Use embeddings to filter entities (improves speed)"
         }

@@ -16,8 +16,7 @@ from homeassistant.helpers.llm import LLMContext, API, APIInstance, _get_exposed
     GetLiveContextTool
 from homeassistant.util import yaml as yaml_util
 
-from const import USE_EMBEDDINGS_ENTITIES
-from custom_components.llama_assist.const import LLAMA_LLM_API, DOMAIN
+from .const import LLAMA_LLM_API, DOMAIN, USE_EMBEDDINGS_ENTITIES
 
 
 class LlamaAssistAPI(API):

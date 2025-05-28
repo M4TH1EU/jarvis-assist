@@ -1,7 +1,8 @@
 DOMAIN = "llama_assist"
 LLAMA_LLM_API = DOMAIN + "_api"
 
-CONF_SERVER_URL = "server-url"
+CONF_COMPLETION_SERVER_URL = "completion-server-url"
+CONF_SERVER_EMBEDDINGS_URL = "embeddings-server-url"
 CONF_PROMPT = "prompt"
 
 DEFAULT_TIMEOUT = 5
@@ -14,8 +15,8 @@ DISABLE_REASONING = False
 
 CONF_USE_EMBEDDINGS_TOOLS = "use_embeddings_tools"
 CONF_USE_EMBEDDINGS_ENTITIES = "use_embeddings_entities"
-USE_EMBEDDINGS_TOOLS = True
-USE_EMBEDDINGS_ENTITIES = True
+USE_EMBEDDINGS_TOOLS = False
+USE_EMBEDDINGS_ENTITIES = False
 
 CONF_BLACKLIST_TOOLS = "blacklist_tools"
 EXISTING_TOOLS = [

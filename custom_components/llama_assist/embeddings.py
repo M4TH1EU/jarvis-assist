@@ -7,7 +7,7 @@ from chromadb import Settings
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.llm import Tool
 
-from const import CHROMADB_PATH, DOMAIN
+from .const import CHROMADB_PATH, DOMAIN
 
 
 @dataclass

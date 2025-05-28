@@ -14,12 +14,12 @@ LOGGER = logging.getLogger(__name__)
 
 
 # Exceptions
-class RequestError(Exception):
+class RequestError(BaseException):
     """Raised when an API request fails (e.g. network or client error)."""
     pass
 
 
-class ResponseError(Exception):
+class ResponseError(BaseException):
     """Raised when the API returns an error status or payload."""
 
     def __init__(self, message: str, status_code: Optional[int] = None):
@@ -104,9 +104,10 @@ class Tool:
 
 # The client that makes API calls
 class LlamaCppClient:
-    def __init__(self, hass: HomeAssistant, base_url: str = "http://localhost:8080",
+    def __init__(self, hass: HomeAssistant, base_url: str = "", embeddings_base_url: str = "",
                  blacklist_tools: Optional[list[str]] = None):
         self.base_url = base_url.rstrip("/")
+        self.embeddings_base_url = embeddings_base_url.rstrip("/") if embeddings_base_url else ""
         self._client = get_async_client(hass)
         self.blacklist_tools = blacklist_tools or []
 
