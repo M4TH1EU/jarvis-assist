@@ -1,123 +1,281 @@
 import json
+import logging
+import math
 import sqlite3
-from typing import List, Dict
+from dataclasses import dataclass
+from typing import List, Dict, Union
 
 from homeassistant.helpers.llm import Tool
 
-from .const import LOGGER
+from .const import EMBEDDINGS_MIN_SCORE
 from .llamacpp_adapter import LlamaCppClient
+
+LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class EntityRecord:
+    """Simple container for an entity embedding record."""
+    entity_id: str
+    label: str
+    vector: List[float]
+
+
+@dataclass(frozen=True)
+class ToolRecord:
+    """Simple container for a tool embedding record."""
+    name: str
+    description: str
+    vector: List[float]
 
 
 class EmbeddingsDatabase:
-    def __init__(self, llama_cpp: LlamaCppClient, db_path: str, overwrite: bool = False):
-        self.conn = sqlite3.connect(db_path)
+    """
+    Manage embeddings for tools and entities in a SQLite database.
+
+    Usage:
+        async with EmbeddingsDatabase(llama_cpp, "/path/to/db.sqlite", overwrite=False) as db:
+            await db.store_tools([tool1, tool2, ...])
+            matches = await db.matching_tools("Turn on the TV")
+    """
+
+    def __init__(
+            self,
+            llama_cpp: LlamaCppClient,
+            db_path: str,
+            overwrite: bool = False,
+            blacklist_tools: List[str] = None
+    ) -> None:
+        self.db_path = db_path
         self.llama_cpp = llama_cpp
-        self._initialize_tables()
-
         self.overwrite = overwrite
+        self.blacklist_tools = blacklist_tools or []
 
-        self.tools: List[Tool] = []
-        self.entities: Dict[str, Dict] = {}
+        self._existing_tools: List[str] = []
+        self._existing_entities: List[str] = []
 
-    def _initialize_tables(self):
+        # In-memory caches
+        # self._tools_cache: Dict[str, Tool] = {}
+        # self._entities_cache: Dict[str, Dict] = {}
+        self._all_tools: Dict[str, Tool] = {}
+        self._all_entities: Dict[str, Dict] = {}
+
+        self.conn = sqlite3.connect(self.db_path, timeout=10, isolation_level=None)
+        self._configure_pragmas()
+        self._create_tables()
+
+        self._load_existing_tools()
+        self._load_existing_entities()
+
+    def _configure_pragmas(self) -> None:
+        """Enable WAL and tune synchronous for a good speed/reliability trade-off."""
         cur = self.conn.cursor()
-        cur.execute("CREATE TABLE IF NOT EXISTS tool_embeddings (name TEXT PRIMARY KEY, description TEXT, vector TEXT)")
-        cur.execute("CREATE TABLE IF NOT EXISTS entity_embeddings (name TEXT PRIMARY KEY, label TEXT, vector TEXT)")
-        self.conn.commit()
+        cur.execute("PRAGMA journal_mode = WAL;")
+        cur.execute("PRAGMA synchronous = NORMAL;")
+        cur.close()
 
-    def close(self):
+    def _create_tables(self) -> None:
+        """Create embeddings tables if they do not exist."""
+        with self.conn:
+            self.conn.execute("""
+                              CREATE TABLE IF NOT EXISTS tool_embeddings
+                              (
+                                  name        TEXT PRIMARY KEY,
+                                  description TEXT NOT NULL,
+                                  vector      TEXT NOT NULL
+                              )
+                              """)
+
+            self.conn.execute("""
+                              CREATE TABLE IF NOT EXISTS entity_embeddings
+                              (
+                                  name   TEXT PRIMARY KEY,
+                                  label  TEXT NOT NULL,
+                                  vector TEXT NOT NULL
+                              )
+                              """)
+
+    def _load_existing_tools(self) -> None:
+        """Load existing tools from the database into the cache."""
+        cur = self.conn.cursor()
+        cur.execute("SELECT name FROM tool_embeddings")
+        for (name,) in cur.fetchall():
+            if name not in self.blacklist_tools:
+                self._existing_tools.append(name)
+
+    def _load_existing_entities(self) -> None:
+        """Load existing entities from the database into the cache."""
+        cur = self.conn.cursor()
+        cur.execute("SELECT name FROM entity_embeddings")
+        for (name,) in cur.fetchall():
+            self._existing_entities.append(name)
+
+    def close(self) -> None:
+        """Close underlying SQLite connection."""
         self.conn.close()
 
-    async def store_tool_embedding(self, tool: Tool):
-        """Store or update tool embedding in the database."""
-        if not tool in self.tools or self.overwrite:
-            self.tools.append(tool)
+    async def __aenter__(self) -> "EmbeddingsDatabase":
+        return self
 
-            cur = self.conn.cursor()
-            vec = (await self.llama_cpp.embeddings([tool.description]))[0]
-            cur.execute("INSERT OR REPLACE INTO tool_embeddings VALUES (?, ?, ?)",
-                        (tool.name, tool.description, json.dumps(vec)))
-            self.conn.commit()
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        self.close()
 
-    async def store_tools_embeddings(self, tools: List[Tool]):
-        for tool in tools:
-            await self.store_tool_embedding(tool)
+    # ──────────────────────────────────────────────────────
+    #  Storage (batching for performance)
+    # ──────────────────────────────────────────────────────
 
-    async def store_entity_embedding(self, entity_id: str, entity: Dict):
-        """Store or update entity embedding in the database."""
-        if entity_id not in self.entities or self.overwrite:
-            self.entities[entity_id] = entity
+    async def store_tools(self, tools: List[Tool]) -> None:
+        """
+        Batch-store embeddings for a list of tools.
+        Only new tools (or all if overwrite=True) will be embedded.
+        """
+        new_tools = [
+            t for t in tools
+            if self.overwrite or t.name not in self._existing_tools
+        ]
+        self._all_tools.update({t.name: t for t in tools})
+        if not new_tools:
+            return
 
-            cur = self.conn.cursor()
-            label = entity.get("names", "")
-            vec = (await self.llama_cpp.embeddings([label]))[0]
-            cur.execute("INSERT OR REPLACE INTO entity_embeddings VALUES (?, ?, ?)",
-                        (entity_id, label, json.dumps(vec)))
-            self.conn.commit()
+        # Batch request descriptions → embeddings
+        descriptions = [t.description for t in new_tools]
+        try:
+            vectors = await self.llama_cpp.embeddings(descriptions)
+        except Exception as e:
+            LOGGER.error("Failed to fetch embeddings for tools: %s", e)
+            return
 
-    async def store_entities_embeddings(self, entities: Dict):
+        records = [
+            ToolRecord(name=tool.name, description=tool.description, vector=vec)
+            for tool, vec in zip(new_tools, vectors)
+        ]
+        self._bulk_insert_tool_records(records)
+        for t in new_tools:
+            self._existing_tools.append(t.name)
+
+    def _bulk_insert_tool_records(self, records: List[ToolRecord]) -> None:
+        """Insert or replace multiple ToolRecords in one transaction."""
+        sql = "INSERT OR REPLACE INTO tool_embeddings (name, description, vector) VALUES (?, ?, ?)"
+        params = [(r.name, r.description, json.dumps(r.vector)) for r in records]
+        try:
+            with self.conn:
+                self.conn.executemany(sql, params)
+        except sqlite3.DatabaseError as db_err:
+            LOGGER.exception("Error writing tool embeddings to DB: %s", db_err)
+
+    async def store_entities(self, entities: Dict[str, Dict]) -> None:
+        """
+        Batch-store embeddings for an entities dict of the form:
+            { "entities": { entity_id: { "names": label, ... }, ... } }
+        """
         if not isinstance(entities, dict) or "entities" not in entities:
-            LOGGER.warning("Invalid entities format, expected a dictionary with 'entities' key.")
+            LOGGER.warning("Invalid entities payload, expected a dict with 'entities' key.")
+            return
 
-        for entity_id, entity_data in entities["entities"].items():
-            await self.store_entity_embedding(entity_id, entity_data)
+        ent_map = entities["entities"]
+        new_ids = [
+            eid for eid in ent_map
+            if self.overwrite or eid not in self._existing_entities
+        ]
+        self._all_entities.update(ent_map)
+        if not new_ids:
+            return
 
-    async def matching_entities(self, user_input: str | list, top_k=3) -> Dict[str, Dict]:
-        """Find matching entities based on user input and return the top_k matches for the self.entities dictionary."""
-        cur = self.conn.cursor()
-        cur.execute("SELECT name, label, vector FROM entity_embeddings")
-        rows = cur.fetchall()
+        labels = [ent_map[eid].get("names", "") for eid in new_ids]
+        try:
+            vectors = await self.llama_cpp.embeddings(labels)
+        except Exception as e:
+            LOGGER.error("Failed to fetch embeddings for entities: %s", e)
+            return
 
-        if isinstance(user_input, str):
-            user_input = (await self.llama_cpp.embeddings([user_input]))[0]
+        records = [
+            EntityRecord(entity_id=eid, label=label, vector=vec)
+            for eid, label, vec in zip(new_ids, labels, vectors)
+        ]
+        self._bulk_insert_entity_records(records)
+        for eid in new_ids:
+            self._existing_entities.append(eid)
 
-        matches = []
+    def _bulk_insert_entity_records(self, records: List[EntityRecord]) -> None:
+        """Insert or replace multiple EntityRecords in one transaction."""
+        sql = "INSERT OR REPLACE INTO entity_embeddings (name, label, vector) VALUES (?, ?, ?)"
+        params = [(r.entity_id, r.label, json.dumps(r.vector)) for r in records]
+        try:
+            with self.conn:
+                self.conn.executemany(sql, params)
+        except sqlite3.DatabaseError as db_err:
+            LOGGER.exception("Error writing entity embeddings to DB: %s", db_err)
 
-        for name, label, vector in rows:
-            vec = json.loads(vector)
-            similarity = _cosine_similarity(user_input, vec)
-            matches.append((name, label, similarity))
+    # ──────────────────────────────────────────────────────
+    #  Matching
+    # ──────────────────────────────────────────────────────
 
-        # Sort by similarity and take the top_k
-        matches.sort(key=lambda x: x[2], reverse=True)
-        top_matches = matches[:top_k]
+    async def matching_tools(
+            self,
+            user_input: Union[str, List[float]],
+            top_k: int = 3
+    ) -> List[Tool]:
+        """
+        Return the top_k most similar Tool instances for the given user_input.
+        If user_input is a str, fetch its embedding first.
+        """
+        query_vec = await self._ensure_embedding(user_input)
+        rows = self.conn.execute(
+            "SELECT name, vector FROM tool_embeddings"
+        ).fetchall()
 
+        scores: List[tuple[float, str]] = []
+        for name, vec_json in rows:
+            vec = json.loads(vec_json)
+            scores.append((self._cosine_similarity(query_vec, vec), name))
+
+        # Pick top_k
+        top_names = [name for sim, name in sorted(scores, reverse=True)[:top_k] if sim >= EMBEDDINGS_MIN_SCORE]
+        return [self._all_tools[name] for name in top_names if name in self._existing_tools]
+
+    async def matching_entities(
+            self,
+            user_input: Union[str, List[float]],
+            top_k: int = 3
+    ) -> Dict[str, Dict]:
+        """
+        Return a dict of the top_k most similar entities for the given user_input.
+        Values come from the original entities payload cached in memory.
+        """
+        query_vec = await self._ensure_embedding(user_input)
+        rows = self.conn.execute(
+            "SELECT name, label, vector FROM entity_embeddings"
+        ).fetchall()
+
+        scores: List[tuple[float, str, str]] = []
+        for name, label, vec_json in rows:
+            vec = json.loads(vec_json)
+            sim = self._cosine_similarity(query_vec, vec)
+            scores.append((sim, name, label))
+
+        top = sorted(scores, reverse=True)[:top_k]
         return {
-            name: self.entities.get(name, {"name": name, "label": label})
-            for name, label, _ in top_matches
+            name: self._all_entities.get(name, {"name": name, "label": label})
+            for sim, name, label in top if sim >= EMBEDDINGS_MIN_SCORE and name in self._all_entities
         }
 
-    async def matching_tools(self, user_input: str | list, top_k=3) -> List[Tool]:
-        """Find matching tools based on user input and return the top_k matches."""
-        cur = self.conn.cursor()
-        cur.execute("SELECT name, description, vector FROM tool_embeddings")
-        rows = cur.fetchall()
-
+    async def _ensure_embedding(
+            self,
+            user_input: Union[str, List[float]]
+    ) -> List[float]:
+        """If given a str, call llama_cpp.embeddings; otherwise pass through."""
         if isinstance(user_input, str):
-            user_input = (await self.llama_cpp.embeddings([user_input]))[0]
+            try:
+                return (await self.llama_cpp.embeddings([user_input]))[0]
+            except Exception as e:
+                LOGGER.error("Embedding lookup failed: %s", e)
+                return []
+        return user_input
 
-        matches = []
-
-        for name, description, vector in rows:
-            vec = json.loads(vector)
-            similarity = _cosine_similarity(user_input, vec)
-            matches.append((name, similarity))
-
-        # Sort by similarity and take the top_k
-        matches.sort(key=lambda x: x[1], reverse=True)
-        top_matches = matches[:top_k]
-
-        tools_dict = {tool.name: tool for tool in self.tools}
-        return [
-            tools_dict.get(name)
-            for name, _ in top_matches
-            if tools_dict.get(name) is not None
-        ]
-
-
-def _cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
-    """Calculate cosine similarity between two vectors."""
-    dot_product = sum(a * b for a, b in zip(vec1, vec2))
-    norm_a = sum(a ** 2 for a in vec1) ** 0.5
-    norm_b = sum(b ** 2 for b in vec2) ** 0.5
-    return dot_product / (norm_a * norm_b) if norm_a and norm_b else 0.0
+    @staticmethod
+    def _cosine_similarity(a: List[float], b: List[float]) -> float:
+        """Compute cosine similarity, guarding against zero‐length vectors."""
+        dot = sum(x * y for x, y in zip(a, b))
+        norm_a = math.sqrt(sum(x * x for x in a))
+        norm_b = math.sqrt(sum(y * y for y in b))
+        return dot / (norm_a * norm_b) if norm_a and norm_b else 0.0

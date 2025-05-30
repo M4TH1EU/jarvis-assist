@@ -14,10 +14,11 @@ from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, Tex
     TemplateSelector, SelectSelector, SelectSelectorConfig, NumberSelector, NumberSelectorConfig, NumberSelectorMode
 
 from . import LlamaCppClient, LlamaAssistAPI
-from .const import DOMAIN, DEFAULT_TIMEOUT, CONF_PROMPT, CONF_MAX_HISTORY, DEFAULT_MAX_HISTORY, LLAMA_LLM_API, \
+from .const import DOMAIN, SERVER_API_TIMEOUT, CONF_PROMPT, CONF_MAX_HISTORY, DEFAULT_MAX_HISTORY, LLAMA_LLM_API, \
     DISABLE_REASONING, CONF_DISABLE_REASONING, EXISTING_TOOLS, CONF_BLACKLIST_TOOLS, CONF_USE_EMBEDDINGS_TOOLS, \
     USE_EMBEDDINGS_TOOLS, USE_EMBEDDINGS_ENTITIES, \
-    CONF_USE_EMBEDDINGS_ENTITIES, CONF_SERVER_EMBEDDINGS_URL, CONF_COMPLETION_SERVER_URL
+    CONF_USE_EMBEDDINGS_ENTITIES, CONF_SERVER_EMBEDDINGS_URL, CONF_COMPLETION_SERVER_URL, CONF_OVERWRITE_EMBEDDINGS, \
+    OVERWRITE_EMBEDDINGS
 from .llamacpp_adapter import RequestError
 
 _LOGGER = logging.getLogger(__name__)
@@ -62,7 +63,7 @@ class LlamaAssistConfigFlow(ConfigFlow, domain=DOMAIN):
         try:
             self.client = LlamaCppClient(base_url=self.url, embeddings_base_url=self.url_embeddings, hass=self.hass)
 
-            async with asyncio.timeout(DEFAULT_TIMEOUT):
+            async with asyncio.timeout(SERVER_API_TIMEOUT):
                 await self.client.health()
         except TimeoutError | RequestError:
             errors["base"] = "cannot_connect"
@@ -168,6 +169,10 @@ def llama_assist_config_option_schema(
         vol.Required(
             CONF_USE_EMBEDDINGS_ENTITIES,
             default=options.get(CONF_USE_EMBEDDINGS_ENTITIES, USE_EMBEDDINGS_ENTITIES)
+        ): bool,
+        vol.Required(
+            CONF_OVERWRITE_EMBEDDINGS,
+            default=options.get(CONF_OVERWRITE_EMBEDDINGS, OVERWRITE_EMBEDDINGS)
         ): bool,
         vol.Required(
             CONF_BLACKLIST_TOOLS,

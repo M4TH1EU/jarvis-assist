@@ -178,7 +178,6 @@ class LlamaConversationEntity(ConversationEntity, AbstractConversationAgent):
         use_stream = False
 
         client: LlamaCppClient = self.hass.data[DOMAIN][self.entry.entry_id]["client"]
-        blacklist_tools = self.hass.data[DOMAIN][self.entry.entry_id].get("blacklist_tools", [])
         embeddings_db: EmbeddingsDatabase = self.hass.data[DOMAIN]["embeddings_db"]
         user_input_vector = (await client.embeddings([user_input.text]))[0]
 
@@ -199,7 +198,7 @@ class LlamaConversationEntity(ConversationEntity, AbstractConversationAgent):
                 _all_exposed_entities = chat_log.llm_api.api.all_exposed_entities
 
                 start_time = time.time()
-                await embeddings_db.store_entities_embeddings(_all_exposed_entities)
+                await embeddings_db.store_entities(_all_exposed_entities)
                 matching_entities = await embeddings_db.matching_entities(user_input=user_input_vector)
                 LOGGER.debug("Time for embeddings entities: %s seconds", time.time() - start_time)
 
@@ -220,7 +219,7 @@ class LlamaConversationEntity(ConversationEntity, AbstractConversationAgent):
         if chat_log.llm_api:
             if settings.get(CONF_USE_EMBEDDINGS_TOOLS):
                 start_time = time.time()
-                await embeddings_db.store_tools_embeddings(chat_log.llm_api.tools)
+                await embeddings_db.store_tools(chat_log.llm_api.tools)
                 tools_to_use = await embeddings_db.matching_tools(user_input=user_input_vector)
                 LOGGER.debug("Time for embeddings tools: %s seconds", time.time() - start_time)
 
