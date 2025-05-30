@@ -10,7 +10,7 @@ import httpx
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.httpx_client import get_async_client
 
-LOGGER = logging.getLogger(__name__)
+from .const import LOGGER
 
 
 # Exceptions
@@ -104,12 +104,10 @@ class Tool:
 
 # The client that makes API calls
 class LlamaCppClient:
-    def __init__(self, hass: HomeAssistant, base_url: str = "", embeddings_base_url: str = "",
-                 blacklist_tools: Optional[list[str]] = None):
+    def __init__(self, hass: HomeAssistant, base_url: str = "", embeddings_base_url: str = ""):
         self.base_url = base_url.rstrip("/")
         self.embeddings_base_url = embeddings_base_url.rstrip("/") if embeddings_base_url else ""
         self._client = get_async_client(hass)
-        self.blacklist_tools = blacklist_tools or []
 
     async def chat(
             self,
@@ -139,7 +137,7 @@ class LlamaCppClient:
                 payload["messages"][id_of_last_msg_from_user]["content"] += " /no_think"
 
         if tools:
-            payload["tools"] = [tool.to_dict() for tool in tools if tool.function.name not in self.blacklist_tools]
+            payload["tools"] = [tool.to_dict() for tool in tools]
 
         try:
             if not stream:

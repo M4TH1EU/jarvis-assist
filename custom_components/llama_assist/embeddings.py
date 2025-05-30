@@ -1,144 +1,123 @@
-import asyncio
-from dataclasses import dataclass
-from typing import List, Dict, Any
+import json
+import sqlite3
+from typing import List, Dict
 
-import chromadb
-from chromadb import Settings
-from homeassistant.core import HomeAssistant
 from homeassistant.helpers.llm import Tool
 
-from .const import CHROMADB_PATH, DOMAIN
+from .const import LOGGER
+from .llamacpp_adapter import LlamaCppClient
 
 
-@dataclass
-class LlamaColls:
-    tools_coll: chromadb.Collection
-    entities_coll: chromadb.Collection
+class EmbeddingsDatabase:
+    def __init__(self, llama_cpp: LlamaCppClient, db_path: str, overwrite: bool = False):
+        self.conn = sqlite3.connect(db_path)
+        self.llama_cpp = llama_cpp
+        self._initialize_tables()
 
+        self.overwrite = overwrite
 
-async def get_or_create_chroma_client(hass: HomeAssistant) -> chromadb.Client:
-    """Get the ChromaDB client from Home Assistant data."""
-    if "chroma" not in hass.data.get(DOMAIN, {}):
-        hass.data.setdefault(DOMAIN, {})["chroma"] = await _create_chroma(hass)
+        self.tools: List[Tool] = []
+        self.entities: Dict[str, Dict] = {}
 
-    return hass.data[DOMAIN]["chroma"]
+    def _initialize_tables(self):
+        cur = self.conn.cursor()
+        cur.execute("CREATE TABLE IF NOT EXISTS tool_embeddings (name TEXT PRIMARY KEY, description TEXT, vector TEXT)")
+        cur.execute("CREATE TABLE IF NOT EXISTS entity_embeddings (name TEXT PRIMARY KEY, label TEXT, vector TEXT)")
+        self.conn.commit()
 
+    def close(self):
+        self.conn.close()
 
-async def _create_chroma(hass: HomeAssistant) -> chromadb.Client:
-    """Create a ChromaDB client with a unique path for each entry."""
+    async def store_tool_embedding(self, tool: Tool):
+        """Store or update tool embedding in the database."""
+        if not tool in self.tools or self.overwrite:
+            self.tools.append(tool)
 
-    def _create_chroma_client():
-        """Create a ChromaDB client."""
-        return chromadb.Client(Settings(
-            persist_directory=CHROMADB_PATH,
-            anonymized_telemetry=False
-        ))
+            cur = self.conn.cursor()
+            vec = (await self.llama_cpp.embeddings([tool.description]))[0]
+            cur.execute("INSERT OR REPLACE INTO tool_embeddings VALUES (?, ?, ?)",
+                        (tool.name, tool.description, json.dumps(vec)))
+            self.conn.commit()
 
-    return await hass.async_add_executor_job(_create_chroma_client)
+    async def store_tools_embeddings(self, tools: List[Tool]):
+        for tool in tools:
+            await self.store_tool_embedding(tool)
 
+    async def store_entity_embedding(self, entity_id: str, entity: Dict):
+        """Store or update entity embedding in the database."""
+        if entity_id not in self.entities or self.overwrite:
+            self.entities[entity_id] = entity
 
-async def get_or_create_collections(client: chromadb.Client, entry_id: str) -> LlamaColls:
-    """Get or create collections for tools and entities."""
-    return LlamaColls(
-        tools_coll=client.get_or_create_collection("tools_" + entry_id),
-        entities_coll=client.get_or_create_collection("entities_" + entry_id),
-    )
+            cur = self.conn.cursor()
+            label = entity.get("names", "")
+            vec = (await self.llama_cpp.embeddings([label]))[0]
+            cur.execute("INSERT OR REPLACE INTO entity_embeddings VALUES (?, ?, ?)",
+                        (entity_id, label, json.dumps(vec)))
+            self.conn.commit()
 
+    async def store_entities_embeddings(self, entities: Dict):
+        if not isinstance(entities, dict) or "entities" not in entities:
+            LOGGER.warning("Invalid entities format, expected a dictionary with 'entities' key.")
 
-async def _ingest_tools(llama_colls: LlamaColls, tools: List[Tool]):
-    ids = []
-    texts = []
-    metadatas = []
-    for t in tools:
-        ids.append(t.name)
-        texts.append(t.description)
-        metadatas.append({"tool_name": t.name})
+        for entity_id, entity_data in entities["entities"].items():
+            await self.store_entity_embedding(entity_id, entity_data)
 
-    await asyncio.to_thread(
-        llama_colls.tools_coll.upsert,
-        ids=ids,
-        embeddings=None,
-        metadatas=metadatas,
-        documents=texts,
-        images=None,
-        uris=None
-    )
+    async def matching_entities(self, user_input: str | list, top_k=3) -> Dict[str, Dict]:
+        """Find matching entities based on user input and return the top_k matches for the self.entities dictionary."""
+        cur = self.conn.cursor()
+        cur.execute("SELECT name, label, vector FROM entity_embeddings")
+        rows = cur.fetchall()
 
+        if isinstance(user_input, str):
+            user_input = (await self.llama_cpp.embeddings([user_input]))[0]
 
-async def _ingest_entities(llama_colls: LlamaColls, entities: Dict[str, Dict[str, Any]]):
-    ids = []
-    texts = []
-    metadatas = []
+        matches = []
 
-    for ent_id, props in entities["entities"].items():
-        ids.append(ent_id)
-        texts.append(props["names"])
-        metadatas.append(props)
+        for name, label, vector in rows:
+            vec = json.loads(vector)
+            similarity = _cosine_similarity(user_input, vec)
+            matches.append((name, label, similarity))
 
-    await asyncio.to_thread(
-        llama_colls.entities_coll.upsert,
-        ids=ids,
-        embeddings=None,
-        metadatas=metadatas,
-        documents=texts,
-        images=None,
-        uris=None
-    )
+        # Sort by similarity and take the top_k
+        matches.sort(key=lambda x: x[2], reverse=True)
+        top_matches = matches[:top_k]
 
-
-async def get_matching_tools(
-        llama_colls: LlamaColls,
-        user_input: str,
-        tools: List[Tool],
-        count: int = 3,
-) -> List[Tool]:
-    await _ingest_tools(llama_colls, tools)
-
-    results = await asyncio.to_thread(
-        llama_colls.tools_coll.query,
-        query_texts=[user_input],
-        n_results=count,
-        query_embeddings=None,
-        query_images=None,
-        query_uris=None,
-        ids=None,
-        where_document=None,
-        where=None,
-        include=["metadatas", "documents", "distances"],
-    )
-
-    matching_tool_names = results["ids"][0] if results["ids"] else []
-
-    return [tool for tool in tools if tool.name in matching_tool_names]
-
-
-async def get_matching_entities(
-        llama_colls: LlamaColls,
-        user_input: str,
-        entities: dict,
-        count: int = 3,
-) -> dict:
-    await _ingest_entities(llama_colls, entities)
-
-    results = await asyncio.to_thread(
-        llama_colls.entities_coll.query,
-        query_texts=[user_input],
-        n_results=count,
-        query_embeddings=None,
-        query_images=None,
-        query_uris=None,
-        ids=None,
-        where_document=None,
-        where=None,
-        include=["metadatas", "documents", "distances"],
-    )
-
-    matching_entity_ids = results["ids"][0] if results["ids"] else []
-
-    return {
-        "entities": {
-            ent_id: props
-            for ent_id, props in entities["entities"].items()
-            if ent_id in matching_entity_ids
+        return {
+            name: self.entities.get(name, {"name": name, "label": label})
+            for name, label, _ in top_matches
         }
-    }
+
+    async def matching_tools(self, user_input: str | list, top_k=3) -> List[Tool]:
+        """Find matching tools based on user input and return the top_k matches."""
+        cur = self.conn.cursor()
+        cur.execute("SELECT name, description, vector FROM tool_embeddings")
+        rows = cur.fetchall()
+
+        if isinstance(user_input, str):
+            user_input = (await self.llama_cpp.embeddings([user_input]))[0]
+
+        matches = []
+
+        for name, description, vector in rows:
+            vec = json.loads(vector)
+            similarity = _cosine_similarity(user_input, vec)
+            matches.append((name, similarity))
+
+        # Sort by similarity and take the top_k
+        matches.sort(key=lambda x: x[1], reverse=True)
+        top_matches = matches[:top_k]
+
+        tools_dict = {tool.name: tool for tool in self.tools}
+        return [
+            tools_dict.get(name)
+            for name, _ in top_matches
+            if tools_dict.get(name) is not None
+        ]
+
+
+def _cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
+    """Calculate cosine similarity between two vectors."""
+    dot_product = sum(a * b for a, b in zip(vec1, vec2))
+    norm_a = sum(a ** 2 for a in vec1) ** 0.5
+    norm_b = sum(b ** 2 for b in vec2) ** 0.5
+    return dot_product / (norm_a * norm_b) if norm_a and norm_b else 0.0

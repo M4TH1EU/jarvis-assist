@@ -1,4 +1,5 @@
 import json
+import time
 from typing import Literal, Callable, Any, AsyncGenerator
 
 from homeassistant.components import assist_pipeline, conversation
@@ -15,15 +16,12 @@ from homeassistant.helpers.intent import IntentResponse
 from homeassistant.util import yaml as yaml_util
 from voluptuous_openapi import convert
 
-from . import LOGGER, DOMAIN
+from . import DOMAIN
 from .const import CONF_PROMPT, CONF_MAX_HISTORY, DEFAULT_MAX_HISTORY, CONF_DISABLE_REASONING, LLAMA_LLM_API, \
-    CONF_USE_EMBEDDINGS_TOOLS, CONF_USE_EMBEDDINGS_ENTITIES
-from .embeddings import get_matching_tools, get_matching_entities
-from .llamacpp_adapter import Message, MessageHistory, MessageRole, Tool, ToolCall
+    CONF_USE_EMBEDDINGS_TOOLS, CONF_USE_EMBEDDINGS_ENTITIES, LOGGER, MAX_TOOL_ITERATIONS
+from .embeddings import EmbeddingsDatabase
+from .llamacpp_adapter import Message, MessageHistory, MessageRole, Tool, ToolCall, LlamaCppClient
 from .llm import LlamaAssistAPI
-
-# Max number of back and forth with the LLM to generate a response
-MAX_TOOL_ITERATIONS = 10
 
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry,
@@ -179,8 +177,10 @@ class LlamaConversationEntity(ConversationEntity, AbstractConversationAgent):
 
         use_stream = False
 
-        client = self.hass.data[DOMAIN][self.entry.entry_id]["client"]
-        llama_colls = self.hass.data[DOMAIN][self.entry.entry_id]["colls"]
+        client: LlamaCppClient = self.hass.data[DOMAIN][self.entry.entry_id]["client"]
+        blacklist_tools = self.hass.data[DOMAIN][self.entry.entry_id].get("blacklist_tools", [])
+        embeddings_db: EmbeddingsDatabase = self.hass.data[DOMAIN]["embeddings_db"]
+        user_input_vector = (await client.embeddings([user_input.text]))[0]
 
         try:
             await chat_log.async_update_llm_data(
@@ -197,16 +197,19 @@ class LlamaConversationEntity(ConversationEntity, AbstractConversationAgent):
         if settings.get(CONF_USE_EMBEDDINGS_ENTITIES):
             if isinstance(chat_log.llm_api.api, LlamaAssistAPI):
                 _all_exposed_entities = chat_log.llm_api.api.all_exposed_entities
-                matching_entities = await get_matching_entities(llama_colls, user_input.text,
-                                                                _all_exposed_entities)
+
+                start_time = time.time()
+                await embeddings_db.store_entities_embeddings(_all_exposed_entities)
+                matching_entities = await embeddings_db.matching_entities(user_input=user_input_vector)
+                LOGGER.debug("Time for embeddings entities: %s seconds", time.time() - start_time)
 
                 prompt = []
 
-                if matching_entities and matching_entities["entities"]:
+                if matching_entities:
                     prompt.append(
                         "Static Context Update:"
                     )
-                    prompt.append(yaml_util.dump(list(matching_entities["entities"].values())))
+                    prompt.append(yaml_util.dump(list(matching_entities.values())))
 
                 chat_log.content.insert(
                     len(chat_log.content) - 1,
@@ -216,7 +219,11 @@ class LlamaConversationEntity(ConversationEntity, AbstractConversationAgent):
         tools: list[Tool] = []
         if chat_log.llm_api:
             if settings.get(CONF_USE_EMBEDDINGS_TOOLS):
-                tools_to_use = await get_matching_tools(llama_colls, user_input.text, chat_log.llm_api.tools)
+                start_time = time.time()
+                await embeddings_db.store_tools_embeddings(chat_log.llm_api.tools)
+                tools_to_use = await embeddings_db.matching_tools(user_input=user_input_vector)
+                LOGGER.debug("Time for embeddings tools: %s seconds", time.time() - start_time)
+
             else:
                 tools_to_use = chat_log.llm_api.tools
 
