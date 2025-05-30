@@ -241,7 +241,7 @@ class LlamaConversationEntity(ConversationEntity, AbstractConversationAgent):
         # To prevent infinite loops, we limit the number of iterations
         for _iteration in range(MAX_TOOL_ITERATIONS):
             try:
-                response_generator = await client.chat(
+                response_generator = client.chat(
                     # Make a copy of the messages because we mutate the list later
                     messages=list(message_history.messages),
                     tools=tools,

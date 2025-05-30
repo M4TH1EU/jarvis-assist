@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import logging
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Optional, AsyncGenerator, Union
@@ -185,26 +184,129 @@ class LlamaCppClient:
                         tool_calls.extend(parsed_tools)
                         content = ""
 
-                # build a one‐shot async generator
-                async def fake_stream() -> AsyncGenerator[Message, None]:
-
-                    # yield one message with both content and tool_calls, marked done
-                    yield Message(
-                        role=choice["role"],
-                        content=content,  # remove the first \n\n
-                        reasoning_content=reasoning_content,
-                        tool_calls=tool_calls,
-                        done=True,
-                        done_reason="stop",
-                    )
-
-                return fake_stream()
+                # yield one message with both content and tool_calls, marked done
+                yield Message(
+                    role=choice["role"],
+                    content=content,  # remove the first \n\n
+                    reasoning_content=reasoning_content,
+                    tool_calls=tool_calls,
+                    done=True,
+                    done_reason="stop",
+                )
             else:
-                raise NotImplementedError("Streaming not supported yet")
+                async with self._client.stream("POST", url, json=payload, timeout=None) as resp:
+                    resp.raise_for_status()
+
+                    # Buffers to accumulate full content and reasoning
+                    full_content = ""
+                    full_reasoning = ""
+                    thinking = False
+
+                    tool_buffers: dict[int, dict] = {}
+                    full_tool_calls: list[ToolCall] = []
+
+                    async for raw_line in resp.aiter_lines():
+                        # SSE style: skip empty lines
+                        if not raw_line or not raw_line.startswith("data:"):
+                            continue
+
+                        # The server might send a final `[DONE]`
+                        payload_str = raw_line.removeprefix("data:").strip()
+                        if payload_str == "[DONE]":
+                            # signal end of stream
+                            msg = Message(
+                                role=MessageRole.ASSISTANT,
+                                content=None,
+                                reasoning_content=None,
+                                tool_calls=None,
+                                done=True,
+                                done_reason="stop"
+                            )
+                            yield msg
+                            break
+
+                        data = json.loads(payload_str)
+                        delta = data["choices"][0]["delta"]
+                        finish_reason = data["choices"][0].get("finish_reason")
+                        content = delta.get("content", None)
+
+                        # Collect any content chunks
+                        # TODO: clean this up
+                        if content:
+                            if "<think>" in content:
+                                chunk = content.split("<think>")[0]  # just in case
+                                full_reasoning += content.split("<think>")[1] or ""
+                                thinking = True
+                            elif "</think>" in content:
+                                chunk = content.split("</think>")[1]
+                                if thinking:
+                                    full_reasoning += content.split("</think>")[0]
+                                thinking = False
+                            else:
+                                if thinking:
+                                    full_reasoning += content
+                                    chunk = ""
+                                else:
+                                    chunk = content
+                            full_content += chunk
+
+                        if "tool_calls" in delta:
+                            for tc in delta["tool_calls"]:
+                                idx = tc["index"]
+                                fn = tc["function"]
+
+                                # 1) First time we see this index: register the call
+                                if idx not in tool_buffers:
+                                    # record metadata and empty buffer
+                                    tool_buffers[idx] = {
+                                        "name": fn["name"],
+                                        "id": tc.get("id"),
+                                        "type": tc.get("type", "function"),
+                                        "args_buffer": "",
+                                    }
+                                    # append a placeholder ToolCall with empty arguments
+                                    full_tool_calls.append(
+                                        ToolCall(
+                                            name=fn["name"],
+                                            arguments={},  # empty until we parse real JSON
+                                        )
+                                    )
+
+                                # 2) Append any new argument text
+                                piece = fn.get("arguments") or ""
+                                if piece:
+                                    tool_buffers[idx]["args_buffer"] += piece
+
+                                    # 3) Try to parse the accumulated buffer as JSON
+                                    try:
+                                        parsed = json.loads(tool_buffers[idx]["args_buffer"])
+                                    except (ValueError, json.JSONDecodeError):
+                                        # not complete yet: leave arguments as-is
+                                        pass
+                                    else:
+                                        # successfully parsed: update the ToolCall placeholder
+                                        full_tool_calls[idx].arguments = parsed
+
+                        # Emit a new Message for every chunk
+                        yield Message(
+                            role=MessageRole.ASSISTANT,
+                            content=chunk if content else None,
+                            reasoning_content=delta.get("reasoning_content"),
+                            tool_calls=list(full_tool_calls),
+                            done=bool(finish_reason),
+                            done_reason=finish_reason,
+                        )
+
+                        if finish_reason:
+                            break
 
         except httpx.HTTPStatusError as e:
-            msg = e.response.text
-            raise ResponseError(msg, e.response.status_code)
+            try:
+                await e.response.aread()
+                error_body = e.response.text
+            except Exception:
+                error_body = "<unable to read response body>"
+            raise ResponseError(error_body, e.response.status_code)
         except httpx.RequestError as e:
             raise RequestError(str(e))
 
