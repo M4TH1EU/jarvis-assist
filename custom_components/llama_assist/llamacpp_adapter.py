@@ -145,7 +145,7 @@ class LlamaCppClient:
                 data = resp.json()
                 choice = data["choices"][0]["message"]
 
-                content = choice.get("content").replace("\n\n", "", 1)
+                content = (choice.get("content") or "").replace("\n\n", "", 1)
                 reasoning_content = choice.get("reasoning_content", "")
 
                 LOGGER.debug(f"""
