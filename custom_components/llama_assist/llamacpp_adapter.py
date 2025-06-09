@@ -138,6 +138,8 @@ class LlamaCppClient:
         if tools:
             payload["tools"] = [tool.to_dict() for tool in tools]
 
+        LOGGER.debug(f"\nCalling Llama.cpp API at {url} with payload: {json.dumps(payload)}\n")
+
         try:
             if not stream:
                 resp = await self._client.post(url, json=payload, timeout=CONVERSATION_TIMEOUT)
@@ -148,25 +150,16 @@ class LlamaCppClient:
                 content = (choice.get("content") or "").replace("\n\n", "", 1)
                 reasoning_content = choice.get("reasoning_content", "")
 
-                LOGGER.debug(f"""
-                Payload Details:
-                 - Tools: {', '.join(tool.function.name for tool in tools or [])}
-                 - Latest system message: {payload["messages"][-2].get("content", "") if payload["messages"][-2]["role"] == MessageRole.SYSTEM else "<no system message>"}
-                
-                Llama.cpp Details:
-                 - Time (prompt) : {data.get("timings").get("prompt_ms")} ms
-                 - Time (completion) : {data.get("timings").get("predicted_ms")} ms
-                 
-                 - Tokens (prompt) : {data.get("usage").get("prompt_tokens")}
-                 - Tokens (completion) : {data.get("usage").get("completion_tokens")}
-                 
-                 - Content : {content}
-                 - Reasoning Content : {reasoning_content}
-                 - Tool Calls : {choice.get("tool_calls", [])}
-                 
-                 Full payload: {json.dumps(payload)}
-                 
-                """)
+                LOGGER.debug(f"\nReceived response from Llama.cpp API:")
+                LOGGER.debug(f"Content: {content}")
+                LOGGER.debug(f"Reasoning content: {reasoning_content}")
+                LOGGER.debug(f"Tool calls: {choice.get('tool_calls', [])}")
+                LOGGER.debug(f"Finish reason: {choice.get('finish_reason', 'unknown')}")
+                LOGGER.debug(f"Time (prompt): {data.get('timings', {}).get('prompt_ms', 'unknown')} ms")
+                LOGGER.debug(f"Time (completion): {data.get('timings', {}).get('predicted_ms', 'unknown')} ms")
+                LOGGER.debug(f"Tokens (prompt): {data.get('usage', {}).get('prompt_tokens', 'unknown')}")
+                LOGGER.debug(f"Tokens (completion): {data.get('usage', {}).get('completion_tokens', 'unknown')}")
+                LOGGER.debug(f"Full payload: {json.dumps(payload)}\n")
 
                 tool_calls = [
                     ToolCall(
