@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import llm as ha_llm
 
-from .const import DOMAIN, SERVER_API_TIMEOUT, LLAMA_LLM_API, CONF_BLACKLIST_TOOLS, CONF_SERVER_EMBEDDINGS_URL, \
+from .const import DOMAIN, HEALTHCHECK_TIMEOUT, LLAMA_LLM_API, CONF_BLACKLIST_TOOLS, CONF_SERVER_EMBEDDINGS_URL, \
     CONF_COMPLETION_SERVER_URL, CONF_USE_EMBEDDINGS_TOOLS, USE_EMBEDDINGS_TOOLS, PLATFORMS, EMBEDDINGS_SQLITE, \
     OVERWRITE_EMBEDDINGS, CONF_OVERWRITE_EMBEDDINGS
 from .embeddings import EmbeddingsDatabase
@@ -28,7 +28,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     client = LlamaCppClient(base_url=settings.get(CONF_COMPLETION_SERVER_URL, ""),
                             embeddings_base_url=settings.get(CONF_SERVER_EMBEDDINGS_URL), hass=hass)
     try:
-        async with asyncio.timeout(SERVER_API_TIMEOUT):
+        async with asyncio.timeout(HEALTHCHECK_TIMEOUT):
             await client.health()
     except TimeoutError as err:
         raise ConfigEntryNotReady(err) from err

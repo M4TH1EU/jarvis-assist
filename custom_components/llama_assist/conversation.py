@@ -179,7 +179,12 @@ class LlamaConversationEntity(ConversationEntity, AbstractConversationAgent):
 
         client: LlamaCppClient = self.hass.data[DOMAIN][self.entry.entry_id]["client"]
         embeddings_db: EmbeddingsDatabase = self.hass.data[DOMAIN]["embeddings_db"]
-        user_input_vector = (await client.embeddings([user_input.text]))[0]
+
+        user_input_vector = []
+        try:
+            user_input_vector = (await client.embeddings([user_input.text]))[0]
+        except Exception as err:
+            LOGGER.error("Error generating embeddings for user input: %s", err)
 
         try:
             await chat_log.async_update_llm_data(
@@ -193,7 +198,7 @@ class LlamaConversationEntity(ConversationEntity, AbstractConversationAgent):
             return err.as_conversation_result()
 
         # If using embeddings entities, we need to get the relevant entities and add them to the chat log for the LLM
-        if settings.get(CONF_USE_EMBEDDINGS_ENTITIES):
+        if settings.get(CONF_USE_EMBEDDINGS_ENTITIES) and user_input_vector:
             if isinstance(chat_log.llm_api.api, LlamaAssistAPI):
                 _all_exposed_entities = chat_log.llm_api.api.all_exposed_entities
 
@@ -217,7 +222,7 @@ class LlamaConversationEntity(ConversationEntity, AbstractConversationAgent):
 
         tools: list[Tool] = []
         if chat_log.llm_api:
-            if settings.get(CONF_USE_EMBEDDINGS_TOOLS):
+            if settings.get(CONF_USE_EMBEDDINGS_TOOLS) and user_input_vector:
                 start_time = time.time()
                 await embeddings_db.store_tools(chat_log.llm_api.tools)
                 tools_to_use = await embeddings_db.matching_tools(user_input=user_input_vector)

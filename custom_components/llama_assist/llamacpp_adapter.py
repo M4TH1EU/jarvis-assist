@@ -9,7 +9,7 @@ import httpx
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.httpx_client import get_async_client
 
-from .const import LOGGER
+from .const import LOGGER, EMBEDDINGS_TIMEOUT, HEALTHCHECK_TIMEOUT, CONVERSATION_TIMEOUT
 
 
 # Exceptions
@@ -140,7 +140,7 @@ class LlamaCppClient:
 
         try:
             if not stream:
-                resp = await self._client.post(url, json=payload, timeout=30)
+                resp = await self._client.post(url, json=payload, timeout=CONVERSATION_TIMEOUT)
                 resp.raise_for_status()
                 data = resp.json()
                 choice = data["choices"][0]["message"]
@@ -194,7 +194,7 @@ class LlamaCppClient:
                     done_reason="stop",
                 )
             else:
-                async with self._client.stream("POST", url, json=payload, timeout=None) as resp:
+                async with self._client.stream("POST", url, json=payload, timeout=CONVERSATION_TIMEOUT) as resp:
                     resp.raise_for_status()
 
                     # Buffers to accumulate full content and reasoning
@@ -299,7 +299,8 @@ class LlamaCppClient:
 
                         if finish_reason:
                             break
-
+        except httpx.ConnectTimeout as e:
+            raise RequestError(f"Connection to server timed out: {str(e)}")
         except httpx.HTTPStatusError as e:
             try:
                 await e.response.aread()
@@ -314,9 +315,11 @@ class LlamaCppClient:
         """Ping the server to check if it's alive."""
         url = f"{self.base_url}/health"
         try:
-            resp = await self._client.get(url)
+            resp = await self._client.get(url, timeout=HEALTHCHECK_TIMEOUT)
             resp.raise_for_status()
             return resp.json().get("status") == "ok"
+        except httpx.ConnectTimeout as e:
+            raise RequestError(f"Connection to server timed out: {str(e)}")
         except httpx.HTTPStatusError as e:
             raise ResponseError(e.response.text, e.response.status_code)
         except httpx.RequestError as e:
@@ -334,10 +337,12 @@ class LlamaCppClient:
         }
 
         try:
-            resp = await self._client.post(url, json=payload)
+            resp = await self._client.post(url, json=payload, timeout=EMBEDDINGS_TIMEOUT)
             resp.raise_for_status()
             data = resp.json()
             return [item["embedding"] for item in data["data"]]
+        except httpx.ConnectTimeout as e:
+            raise RequestError(f"Connection to embeddings server timed out: {str(e)}")
         except httpx.HTTPStatusError as e:
             raise ResponseError(e.response.text, e.response.status_code)
         except httpx.RequestError as e:

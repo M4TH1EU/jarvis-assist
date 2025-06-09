@@ -11,7 +11,10 @@ CONF_COMPLETION_SERVER_URL = "completion-server-url"
 CONF_SERVER_EMBEDDINGS_URL = "embeddings-server-url"
 CONF_PROMPT = "prompt"
 
-SERVER_API_TIMEOUT = 5
+HEALTHCHECK_TIMEOUT = 5
+CONVERSATION_TIMEOUT = 30
+EMBEDDINGS_TIMEOUT = 10
+
 
 # Max number of back and forth with the LLM to generate a response
 MAX_TOOL_ITERATIONS = 10
