@@ -14,7 +14,7 @@ from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType, SelectOptionDict, \
     TemplateSelector, SelectSelector, SelectSelectorConfig, NumberSelector, NumberSelectorConfig, NumberSelectorMode
 
-from . import LlamaCppClient, LlamaAssistAPI
+from . import LlamaAssistAPI
 from .const import DOMAIN, CONF_PROMPT, CONF_MAX_HISTORY, DEFAULT_MAX_HISTORY, LLAMA_LLM_API, \
     DISABLE_REASONING, CONF_DISABLE_REASONING, EXISTING_TOOLS, CONF_BLACKLIST_TOOLS, CONF_USE_EMBEDDINGS_TOOLS, \
     USE_EMBEDDINGS_TOOLS, USE_EMBEDDINGS_ENTITIES, \
@@ -63,7 +63,6 @@ class LlamaAssistConfigFlow(ConfigFlow, domain=DOMAIN):
         """Initialize config flow."""
         self.url: str | None = None
         self.url_embeddings: str | None = None
-        self.client: LlamaCppClient | None = None
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         """Handle the initial step."""

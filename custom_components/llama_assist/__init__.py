@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 
 import openai
@@ -17,7 +16,6 @@ from .const import DOMAIN, HEALTHCHECK_TIMEOUT, LLAMA_LLM_API, CONF_BLACKLIST_TO
     CONF_COMPLETION_SERVER_URL, CONF_USE_EMBEDDINGS_TOOLS, USE_EMBEDDINGS_TOOLS, PLATFORMS, EMBEDDINGS_SQLITE, \
     OVERWRITE_EMBEDDINGS, CONF_OVERWRITE_EMBEDDINGS
 from .embeddings import EmbeddingsDatabase
-from .llamacpp_adapter import LlamaCppClient
 from .llm import LlamaAssistAPI
 
 type LlamaAPIClientsConfigEntry = ConfigEntry[LlamaAPIClients]
@@ -47,10 +45,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady(err) from err
 
     try:
-        await hass.async_add_executor_job(embeddings_client.with_options(timeout=10.0).models.list) if embeddings_client else None
+        await hass.async_add_executor_job(
+            embeddings_client.with_options(timeout=10.0).models.list) if embeddings_client else None
     except openai.OpenAIError as err:
         raise ConfigEntryNotReady(err) from err
-
 
     db_path = Path(hass.config.path(DOMAIN + "/" + EMBEDDINGS_SQLITE))
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -78,14 +76,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: LlamaAPIClientsConfigEn
     if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         return False
 
-    hass.data[DOMAIN].pop(entry.entry_id) # TODO: fix unload
+    hass.data[DOMAIN].pop(entry.entry_id)  # TODO: fix unload
     return True
 
 
 class LlamaAPIClients:
     """A class to hold the API clients for Llama Assist."""
 
-    def __init__(self, completion_client: AsyncOpenAI, embeddings_client: AsyncOpenAI | None = None, embeddings_db: EmbeddingsDatabase | None = None):
+    def __init__(self, completion_client: AsyncOpenAI, embeddings_client: AsyncOpenAI | None = None,
+                 embeddings_db: EmbeddingsDatabase | None = None):
         """Initialize the API clients."""
         self.completion_client = completion_client
         self.embeddings_client = embeddings_client

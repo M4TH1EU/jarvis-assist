@@ -16,8 +16,7 @@ from homeassistant.helpers.llm import LLMContext, API, APIInstance, _get_exposed
     GetLiveContextTool
 from homeassistant.util import yaml as yaml_util
 
-from .const import LLAMA_LLM_API, DOMAIN, USE_EMBEDDINGS_ENTITIES, CONF_COMPLETION_SERVER_URL, \
-    CONF_USE_EMBEDDINGS_ENTITIES
+from .const import LLAMA_LLM_API, USE_EMBEDDINGS_ENTITIES
 
 
 class LlamaAssistAPI(API):
@@ -63,7 +62,7 @@ class LlamaAssistAPI(API):
         #         # If the entry's base URL matches the target ID, use the option for embeddings
         #         self.use_embedding_for_entities = entry.options.get(CONF_USE_EMBEDDINGS_ENTITIES, USE_EMBEDDINGS_ENTITIES)
         #         break
-        self.use_embedding_for_entities = True # TODO, find a way to fix this
+        self.use_embedding_for_entities = True  # TODO, find a way to fix this
 
         if llm_context.assistant:
             _exposed_entities = _get_exposed_entities(self.hass, llm_context.assistant, include_state=False)

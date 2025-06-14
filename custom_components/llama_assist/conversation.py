@@ -41,8 +41,7 @@ from voluptuous_openapi import convert
 
 from . import DOMAIN, LlamaAssistAPI, LlamaAPIClientsConfigEntry
 from .const import CONF_PROMPT, LLAMA_LLM_API, \
-    CONF_USE_EMBEDDINGS_TOOLS, LOGGER, MAX_TOOL_ITERATIONS, CONF_USE_EMBEDDINGS_ENTITIES, ToolsEmbeddingsFeature, \
-    EntitiesEmbeddingsFeature
+    CONF_USE_EMBEDDINGS_TOOLS, LOGGER, MAX_TOOL_ITERATIONS, CONF_USE_EMBEDDINGS_ENTITIES
 from .embeddings import EmbeddingsDatabase
 
 
