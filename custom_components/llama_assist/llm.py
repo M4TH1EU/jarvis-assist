@@ -16,7 +16,8 @@ from homeassistant.helpers.llm import LLMContext, API, APIInstance, _get_exposed
     GetLiveContextTool
 from homeassistant.util import yaml as yaml_util
 
-from .const import LLAMA_LLM_API, DOMAIN, USE_EMBEDDINGS_ENTITIES, CONF_COMPLETION_SERVER_URL
+from .const import LLAMA_LLM_API, DOMAIN, USE_EMBEDDINGS_ENTITIES, CONF_COMPLETION_SERVER_URL, \
+    CONF_USE_EMBEDDINGS_ENTITIES
 
 
 class LlamaAssistAPI(API):
@@ -54,14 +55,15 @@ class LlamaAssistAPI(API):
         exposed_entities: dict | None = None
 
         # # Hack to check if option "use embeddings for entities" is set without additional function parameters
-        for entry in self.hass.config_entries.async_entries(DOMAIN):
-            url_from_context = llm_context.context.origin_event.data.get("old_state", {}).name.removeprefix(
-                "Llama Assist (").removesuffix(")")
-
-            if entry.data.get(CONF_COMPLETION_SERVER_URL, "") == url_from_context:
-                # If the entry's base URL matches the target ID, use the option for embeddings
-                self.use_embedding_for_entities = entry.options.get("use_embeddings_entities", USE_EMBEDDINGS_ENTITIES)
-                break
+        # for entry in self.hass.config_entries.async_entries(DOMAIN):
+        #     url_from_context = llm_context.context.origin_event.data.get("old_state", {}).name.removeprefix(
+        #         "Llama Assist (").removesuffix(")")
+        #
+        #     if entry.data.get(CONF_COMPLETION_SERVER_URL, "") == url_from_context:
+        #         # If the entry's base URL matches the target ID, use the option for embeddings
+        #         self.use_embedding_for_entities = entry.options.get(CONF_USE_EMBEDDINGS_ENTITIES, USE_EMBEDDINGS_ENTITIES)
+        #         break
+        self.use_embedding_for_entities = True # TODO, find a way to fix this
 
         if llm_context.assistant:
             _exposed_entities = _get_exposed_entities(self.hass, llm_context.assistant, include_state=False)
@@ -77,7 +79,7 @@ class LlamaAssistAPI(API):
             api=self,
             api_prompt=self._async_get_api_prompt(llm_context, exposed_entities),
             llm_context=llm_context,
-            tools=self._async_get_tools(llm_context, exposed_entities),
+            tools=self._async_get_tools(llm_context, self.all_exposed_entities or exposed_entities),
             custom_serializer=_selector_serializer,
         )
 

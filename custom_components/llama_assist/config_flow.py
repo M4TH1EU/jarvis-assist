@@ -1,25 +1,25 @@
 """Config flow for Llama Assist integration."""
 from __future__ import annotations
 
-import asyncio
 import logging
 import sys
 from typing import Any
 
+import openai
 import voluptuous as vol
 from homeassistant.config_entries import ConfigFlow, ConfigEntry, OptionsFlow
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import llm
+from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType, SelectOptionDict, \
     TemplateSelector, SelectSelector, SelectSelectorConfig, NumberSelector, NumberSelectorConfig, NumberSelectorMode
 
 from . import LlamaCppClient, LlamaAssistAPI
-from .const import DOMAIN, HEALTHCHECK_TIMEOUT, CONF_PROMPT, CONF_MAX_HISTORY, DEFAULT_MAX_HISTORY, LLAMA_LLM_API, \
+from .const import DOMAIN, CONF_PROMPT, CONF_MAX_HISTORY, DEFAULT_MAX_HISTORY, LLAMA_LLM_API, \
     DISABLE_REASONING, CONF_DISABLE_REASONING, EXISTING_TOOLS, CONF_BLACKLIST_TOOLS, CONF_USE_EMBEDDINGS_TOOLS, \
     USE_EMBEDDINGS_TOOLS, USE_EMBEDDINGS_ENTITIES, \
     CONF_USE_EMBEDDINGS_ENTITIES, CONF_SERVER_EMBEDDINGS_URL, CONF_COMPLETION_SERVER_URL, CONF_OVERWRITE_EMBEDDINGS, \
     OVERWRITE_EMBEDDINGS
-from .llamacpp_adapter import RequestError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,6 +35,25 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 )
 
 
+async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> None:
+    """Validate the user input allows us to connect.
+
+    Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
+    """
+    client = openai.AsyncOpenAI(
+        base_url=data[CONF_COMPLETION_SERVER_URL],
+        http_client=get_async_client(hass)
+    )
+    if data[CONF_SERVER_EMBEDDINGS_URL]:
+        client_embeddings = openai.AsyncOpenAI(
+            base_url=data[CONF_SERVER_EMBEDDINGS_URL],
+            http_client=get_async_client(hass)
+        )
+        await hass.async_add_executor_job(client_embeddings.with_options(timeout=10.0).embeddings.list)
+
+    await hass.async_add_executor_job(client.with_options(timeout=10.0).models.list)
+
+
 class LlamaAssistConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Llama Assist."""
 
@@ -48,6 +67,11 @@ class LlamaAssistConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         """Handle the initial step."""
+        if user_input is None:
+            return self.async_show_form(
+                step_id="user", data_schema=STEP_USER_DATA_SCHEMA
+            )
+
         user_input = user_input or {}
         self.url = user_input.get(CONF_COMPLETION_SERVER_URL, self.url)
         self.url_embeddings = user_input.get(CONF_SERVER_EMBEDDINGS_URL, self.url_embeddings)
@@ -61,21 +85,20 @@ class LlamaAssistConfigFlow(ConfigFlow, domain=DOMAIN):
         errors = {}
 
         try:
-            self.client = LlamaCppClient(base_url=self.url, embeddings_base_url=self.url_embeddings, hass=self.hass)
-
-            async with asyncio.timeout(HEALTHCHECK_TIMEOUT):
-                await self.client.health()
-        except TimeoutError | RequestError:
+            await validate_input(self.hass, user_input)
+        except openai.APIConnectionError:
             errors["base"] = "cannot_connect"
+        except openai.AuthenticationError:
+            errors["base"] = "invalid_auth"
         except Exception:
             _LOGGER.exception("Unexpected exception")
             errors["base"] = "unknown"
+        else:
+            return self.async_create_entry(title=f"Llama Assist ({self.url})",
+                                           data={CONF_COMPLETION_SERVER_URL: self.url,
+                                                 CONF_SERVER_EMBEDDINGS_URL: self.url_embeddings})
 
-        if errors:
-            return self.async_show_form(step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors)
-
-        return self.async_create_entry(title=f"Llama Assist ({self.url})", data={CONF_COMPLETION_SERVER_URL: self.url,
-                                                                                 CONF_SERVER_EMBEDDINGS_URL: self.url_embeddings})
+        return self.async_show_form(step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors)
 
     @staticmethod
     @callback

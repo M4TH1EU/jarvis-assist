@@ -6,9 +6,10 @@ from dataclasses import dataclass
 from typing import List, Dict, Union
 
 from homeassistant.helpers.llm import Tool
+from openai import AsyncOpenAI
+from openai.types import CreateEmbeddingResponse
 
 from .const import EMBEDDINGS_MIN_SCORE
-from .llamacpp_adapter import LlamaCppClient
 
 LOGGER = logging.getLogger(__name__)
 
@@ -34,20 +35,20 @@ class EmbeddingsDatabase:
     Manage embeddings for tools and entities in a SQLite database.
 
     Usage:
-        async with EmbeddingsDatabase(llama_cpp, "/path/to/db.sqlite", overwrite=False) as db:
+        async with EmbeddingsDatabase(api, "/path/to/db.sqlite", overwrite=False) as db:
             await db.store_tools([tool1, tool2, ...])
             matches = await db.matching_tools("Turn on the TV")
     """
 
     def __init__(
             self,
-            llama_cpp: LlamaCppClient,
+            api: AsyncOpenAI,
             db_path: str,
             overwrite: bool = False,
             blacklist_tools: List[str] = None
     ) -> None:
         self.db_path = db_path
-        self.llama_cpp = llama_cpp
+        self.api = api
         self.overwrite = overwrite
         self.blacklist_tools = blacklist_tools or []
 
@@ -100,7 +101,7 @@ class EmbeddingsDatabase:
         cur = self.conn.cursor()
         cur.execute("SELECT name FROM tool_embeddings")
         for (name,) in cur.fetchall():
-            if name not in self.blacklist_tools:
+            if name not in self.blacklist_tools and name not in self._existing_tools:
                 self._existing_tools.append(name)
 
     def _load_existing_entities(self) -> None:
@@ -108,7 +109,8 @@ class EmbeddingsDatabase:
         cur = self.conn.cursor()
         cur.execute("SELECT name FROM entity_embeddings")
         for (name,) in cur.fetchall():
-            self._existing_entities.append(name)
+            if name not in self._existing_entities:
+                self._existing_entities.append(name)
 
     def close(self) -> None:
         """Close underlying SQLite connection."""
@@ -140,7 +142,7 @@ class EmbeddingsDatabase:
         # Batch request descriptions → embeddings
         descriptions = [t.description for t in new_tools]
         try:
-            vectors = await self.llama_cpp.embeddings(descriptions)
+            vectors = await self._ensure_embedding(descriptions)
         except Exception as e:
             LOGGER.error("Failed to fetch embeddings for tools: %s", e)
             return
@@ -151,7 +153,8 @@ class EmbeddingsDatabase:
         ]
         self._bulk_insert_tool_records(records)
         for t in new_tools:
-            self._existing_tools.append(t.name)
+            if t.name not in self._existing_tools:
+                self._existing_tools.append(t.name)
 
     def _bulk_insert_tool_records(self, records: List[ToolRecord]) -> None:
         """Insert or replace multiple ToolRecords in one transaction."""
@@ -183,7 +186,7 @@ class EmbeddingsDatabase:
 
         labels = [ent_map[eid].get("names", "") for eid in new_ids]
         try:
-            vectors = await self.llama_cpp.embeddings(labels)
+            vectors = await self._ensure_embedding(labels)
         except Exception as e:
             LOGGER.error("Failed to fetch embeddings for entities: %s", e)
             return
@@ -194,7 +197,8 @@ class EmbeddingsDatabase:
         ]
         self._bulk_insert_entity_records(records)
         for eid in new_ids:
-            self._existing_entities.append(eid)
+            if eid not in self._existing_entities:
+                self._existing_entities.append(eid)
 
     def _bulk_insert_entity_records(self, records: List[EntityRecord]) -> None:
         """Insert or replace multiple EntityRecords in one transaction."""
@@ -231,7 +235,7 @@ class EmbeddingsDatabase:
 
         # Pick top_k
         top_names = [name for sim, name in sorted(scores, reverse=True)[:top_k] if sim >= EMBEDDINGS_MIN_SCORE]
-        return [self._all_tools[name] for name in top_names if name in self._existing_tools]
+        return [self._all_tools[name] for name in top_names if name in self._all_tools]
 
     async def matching_entities(
             self,
@@ -261,15 +265,35 @@ class EmbeddingsDatabase:
 
     async def _ensure_embedding(
             self,
-            user_input: Union[str, List[float]]
+            user_input: Union[str, List[float], List[str]]
     ) -> List[float]:
         """If given a str, call llama_cpp.embeddings; otherwise pass through."""
         if isinstance(user_input, str):
             try:
-                return (await self.llama_cpp.embeddings([user_input]))[0]
+                input_vector = await self.api.embeddings.create(input=user_input, model="none", encoding_format="float")
+                input_vector = input_vector[0].model_extra.get('embedding', [])
+                return input_vector[0] if input_vector else []
             except Exception as e:
                 LOGGER.error("Embedding lookup failed: %s", e)
                 return []
+        elif isinstance(user_input, list) and all(isinstance(x, str) for x in user_input):
+            # If a list of strings, assume it's a batch input
+            try:
+                input_vectors: List[List[float]] = []
+
+                input_vectors_responses: List[CreateEmbeddingResponse] = await self.api.embeddings.create(
+                    input=user_input, model="none", encoding_format="float")
+                for response in input_vectors_responses:
+                    if response.model_extra.get('embedding'):
+                        vec = response.model_extra['embedding']
+                        if isinstance(vec, list) and len(vec) > 0:
+                            input_vectors.append(vec[0])
+
+                return input_vectors or []
+            except Exception as e:
+                LOGGER.error("Batch embedding lookup failed: %s", e)
+                return []
+
         return user_input
 
     @staticmethod

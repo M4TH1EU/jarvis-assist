@@ -1,4 +1,5 @@
 import logging
+from enum import IntFlag
 
 from homeassistant.const import Platform
 
@@ -57,3 +58,9 @@ EXISTING_TOOLS = [
 ]
 
 EMBEDDINGS_SQLITE = "llama_assist_embeddings.db"
+
+class ToolsEmbeddingsFeature(IntFlag):
+    TOOLS_EMBEDDINGS = 1
+
+class EntitiesEmbeddingsFeature(IntFlag):
+    ENTITIES_EMBEDDINGS = 1
