@@ -6,7 +6,7 @@ from homeassistant.const import Platform
 DOMAIN = "llama_assist"
 LLAMA_LLM_API = DOMAIN + "_api"
 LOGGER = logging.getLogger(__name__)
-PLATFORMS = (Platform.CONVERSATION,)
+PLATFORMS = (Platform.CONVERSATION,Platform.TTS,)
 
 CONF_COMPLETION_SERVER_URL = "completion-server-url"
 CONF_SERVER_EMBEDDINGS_URL = "embeddings-server-url"
