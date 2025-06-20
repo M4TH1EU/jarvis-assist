@@ -9,6 +9,7 @@ import openai
 import voluptuous as vol
 from homeassistant.config_entries import ConfigFlow, ConfigEntry, OptionsFlow
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import llm
 from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType, SelectOptionDict, \
@@ -40,18 +41,29 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> None:
 
     Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
     """
-    client = openai.AsyncOpenAI(
+    completion_client = openai.AsyncOpenAI(
+        api_key="none",
         base_url=data[CONF_COMPLETION_SERVER_URL],
         http_client=get_async_client(hass)
     )
+
+    try:
+        await hass.async_add_executor_job(completion_client.with_options(timeout=10.0).models.list)
+    except openai.OpenAIError as err:
+        raise ConfigEntryNotReady(err) from err
+
     if data[CONF_SERVER_EMBEDDINGS_URL]:
-        client_embeddings = openai.AsyncOpenAI(
+        embeddings_client = openai.AsyncOpenAI(
+            api_key="none",
             base_url=data[CONF_SERVER_EMBEDDINGS_URL],
             http_client=get_async_client(hass)
         )
-        await hass.async_add_executor_job(client_embeddings.with_options(timeout=10.0).embeddings.list)
 
-    await hass.async_add_executor_job(client.with_options(timeout=10.0).models.list)
+        try:
+            await hass.async_add_executor_job(
+                embeddings_client.with_options(timeout=10.0).models.list) if embeddings_client else None
+        except openai.OpenAIError as err:
+            raise ConfigEntryNotReady(err) from err
 
 
 class LlamaAssistConfigFlow(ConfigFlow, domain=DOMAIN):
